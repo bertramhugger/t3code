@@ -1278,6 +1278,52 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("keeps the text-to-speech key in the secret store and out of clients", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const serverConfig = yield* ServerConfig.ServerConfig;
+      const secretStore = yield* ServerSecretStore.ServerSecretStore;
+      const fileSystem = yield* FileSystem.FileSystem;
+
+      const saved = yield* serverSettings.updateSettings({
+        textToSpeech: { googleApiKey: "google-secret" },
+      });
+      assert.equal(saved.textToSpeech.googleApiKey, "google-secret");
+      assert.notInclude(
+        yield* fileSystem.readFileString(serverConfig.settingsPath),
+        "google-secret",
+      );
+      const redacted = ServerSettingsModule.redactServerSettingsForClient(saved).textToSpeech;
+      assert.isNotEmpty(redacted.googleApiKey);
+      assert.notEqual(redacted.googleApiKey, "google-secret");
+
+      // A client only holds the marker; changing the voice must not clear the key.
+      const voiceChanged = yield* serverSettings.updateSettings({
+        textToSpeech: { voice: "en-GB-Neural2-A" },
+      });
+      assert.deepEqual(voiceChanged.textToSpeech, {
+        googleApiKey: "google-secret",
+        voice: "en-GB-Neural2-A",
+      });
+
+      const cleared = yield* serverSettings.updateSettings({ textToSpeech: { googleApiKey: "" } });
+      assert.equal(cleared.textToSpeech.googleApiKey, "");
+      assert.isTrue(Option.isNone(yield* secretStore.get("text-to-speech-google-api-key")));
+    }).pipe(
+      Effect.provide(
+        ServerSettingsModule.layer.pipe(
+          Layer.provideMerge(ServerSecretStore.layer),
+          Layer.provideMerge(Layer.fresh(SqlitePersistenceMemory)),
+          Layer.provideMerge(
+            Layer.fresh(
+              ServerConfig.layerTest(process.cwd(), { prefix: "t3code-server-settings-test-" }),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
   it.effect("materializes provider secrets for terminal environment resolution", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

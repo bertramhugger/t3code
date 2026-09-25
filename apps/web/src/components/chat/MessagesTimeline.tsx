@@ -164,6 +164,7 @@ import {
   timelineContentOverflowsViewport,
 } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { ReadAloudButton } from "./ReadAloudButton";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { inferEntryKindFromPath } from "../../pierre-icons";
 import { AssistantSelectionToolbar } from "./AssistantSelectionToolbar";
@@ -2448,6 +2449,11 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
+      <AssistantReadAloudButton
+        message={message}
+        showCopyButton={showCopyButton}
+        streaming={copyStreaming}
+      />
       {!message.streaming && (
         <Tooltip>
           <TooltipTrigger render={<p className="text-muted-foreground text-xs tabular-nums" />}>
@@ -2482,6 +2488,32 @@ function AssistantCopyButton({
   }
 
   return <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />;
+}
+
+/** Offered wherever copy is: a finished response with text. */
+function AssistantReadAloudButton({
+  message,
+  showCopyButton,
+  streaming,
+}: {
+  message: ChatMessage;
+  showCopyButton: boolean;
+  streaming: boolean;
+}) {
+  const ctx = use(TimelineRowCtx);
+  const { text, visible } = resolveAssistantMessageCopyState({
+    text: message.text ?? null,
+    showCopyButton,
+    streaming,
+  });
+  if (!visible || text === null) return null;
+  return (
+    <ReadAloudButton
+      environmentId={ctx.activeThreadEnvironmentId}
+      messageId={message.id}
+      markdown={text}
+    />
+  );
 }
 
 function ProposedPlanTimelineRow({

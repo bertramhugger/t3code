@@ -266,6 +266,7 @@ import {
   useClientSettingsHydrated,
   useEnvironmentSettings,
 } from "../hooks/useSettings";
+import { useAutoReadAloud } from "../hooks/useAutoReadAloud";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -1558,6 +1559,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const routeServerThreadShell = useThreadShell(routeKind === "server" ? routeThreadRef : null);
   const serverThread = useThread(routeThreadRef, { waitForShell: draftThread !== null });
+  useAutoReadAloud(serverThread ?? null, routeThreadRef.environmentId);
   const loadingServerThread = useMemo(
     () =>
       threadDetailLoading && routeServerThreadShell
