@@ -16,6 +16,11 @@ import {
 
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
+  TextToSpeechError,
+  TextToSpeechSynthesizeInput,
+  TextToSpeechSynthesizeResult,
+} from "./textToSpeech.ts";
+import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
   EnvironmentAuthorizationError,
@@ -385,6 +390,7 @@ export const WS_METHODS = {
   serverGetBackgroundPolicy: "server.getBackgroundPolicy",
   serverGetUsageSummary: "server.getUsageSummary",
   serverRefreshUsageRates: "server.refreshUsageRates",
+  serverSynthesizeSpeech: "server.synthesizeSpeech",
 
   // Cloud environment methods
   cloudGetRelayClientStatus: "cloud.getRelayClientStatus",
@@ -653,6 +659,13 @@ const WsServerRefreshUsageRatesRpc = Rpc.make(WS_METHODS.serverRefreshUsageRates
   payload: Schema.Struct({}),
   success: UsagePricing,
   error: EnvironmentAuthorizationError,
+});
+
+/** Reads assistant text aloud through the environment's Google TTS key. */
+const WsServerSynthesizeSpeechRpc = Rpc.make(WS_METHODS.serverSynthesizeSpeech, {
+  payload: TextToSpeechSynthesizeInput,
+  success: TextToSpeechSynthesizeResult,
+  error: Schema.Union([EnvironmentAuthorizationError, TextToSpeechError]),
 });
 
 const WsServerSignalProcessRpc = Rpc.make(WS_METHODS.serverSignalProcess, {
@@ -1423,6 +1436,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRetryResourceTelemetryRpc,
   WsServerGetUsageSummaryRpc,
   WsServerRefreshUsageRatesRpc,
+  WsServerSynthesizeSpeechRpc,
   WsServerSignalProcessRpc,
   WsServerReportClientActivityRpc,
   WsServerReportHostPowerStateRpc,

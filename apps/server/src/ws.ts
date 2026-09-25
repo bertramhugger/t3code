@@ -73,6 +73,7 @@ import {
   type TerminalError,
   type TerminalEvent,
   type TerminalMetadataStreamEvent,
+  TextToSpeechError,
   type PullRequestRef,
   WS_METHODS,
   WsRpcGroup,
@@ -157,6 +158,7 @@ import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import * as UsageService from "./usage/UsageService.ts";
+import { makeGoogleTextToSpeech } from "./textToSpeech/googleTextToSpeech.ts";
 import * as TraceDiagnostics from "./diagnostics/TraceDiagnostics.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import { listLinkedPullRequestThreads } from "./pullRequest/linkedThreads.ts";
@@ -669,6 +671,7 @@ const makeWsRpcLayer = (
       const processResourceMonitor = yield* ProcessResourceMonitor.ProcessResourceMonitor;
       const resourceTelemetry = yield* ResourceTelemetry.ResourceTelemetry;
       const usage = yield* UsageService.UsageService;
+      const textToSpeech = yield* makeGoogleTextToSpeech;
       const relayClient = yield* RelayClient.RelayClient;
       const authorizationError = (requiredScope: AuthEnvironmentScope) =>
         new EnvironmentAuthorizationError({
@@ -2677,6 +2680,20 @@ const makeWsRpcLayer = (
           observeRpcEffect(WS_METHODS.serverRefreshUsageRates, usage.refreshRates, {
             "rpc.aggregate": "server",
           }),
+        [WS_METHODS.serverSynthesizeSpeech]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.serverSynthesizeSpeech,
+            serverSettings.getSettings.pipe(
+              Effect.mapError(
+                () =>
+                  new TextToSpeechError({ detail: "Could not read the text-to-speech settings." }),
+              ),
+              Effect.flatMap((settings) =>
+                textToSpeech.synthesize(settings.textToSpeech, input.text),
+              ),
+            ),
+            { "rpc.aggregate": "server" },
+          ),
         [WS_METHODS.serverRetryResourceTelemetry]: (_input) =>
           observeRpcEffect(WS_METHODS.serverRetryResourceTelemetry, resourceTelemetry.retry, {
             "rpc.aggregate": "server",

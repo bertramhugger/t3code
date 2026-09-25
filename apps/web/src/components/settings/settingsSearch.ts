@@ -303,6 +303,26 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["notification toast popup completion input approval failure"],
   },
   {
+    id: "read-aloud-google-api-key",
+    title: "Google Cloud API key",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["read aloud text to speech tts voice audio speak google cloud key"],
+  },
+  {
+    id: "read-aloud-voice",
+    title: "Read aloud voice",
+    to: "/settings/general",
+    scope: "environment-defaults",
+    searchTerms: ["text to speech tts google voice language accent"],
+  },
+  {
+    id: "read-aloud-autoplay",
+    title: "Read responses aloud automatically",
+    to: "/settings/general",
+    searchTerms: ["text to speech tts speak audio voice auto play finished turn"],
+  },
+  {
     id: "time-format",
     title: "Time format",
     to: "/settings/general",

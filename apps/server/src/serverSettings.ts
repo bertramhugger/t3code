@@ -140,11 +140,14 @@ function providerEnvironmentSecretName(input: {
 }
 
 /**
- * On disk the hub key is replaced by this marker and the real value lives in
- * the secret store, mirroring provider environment secrets. A client that
- * sends the marker back means "keep what you have".
+ * On disk a secret setting (hub key, text-to-speech key) is replaced by this
+ * marker and the real value lives in the secret store, mirroring provider
+ * environment secrets. A client that sends the marker back means "keep what
+ * you have".
  */
-const USAGE_LIMIT_SOURCE_KEY_REDACTED = "\u2022\u2022\u2022\u2022\u2022\u2022";
+const SECRET_SETTING_REDACTED = "\u2022\u2022\u2022\u2022\u2022\u2022";
+
+const TEXT_TO_SPEECH_KEY_SECRET_NAME = "text-to-speech-google-api-key";
 
 function usageLimitSourceSecretName(sourceId: string): string {
   return `usage-limit-source-${Buffer.from(sourceId, "utf8").toString("base64url")}`;
@@ -182,11 +185,15 @@ export function redactServerSettingsForClient(settings: ServerSettings): ServerS
       id,
       {
         ...source,
-        managementKey: source.managementKey.length > 0 ? USAGE_LIMIT_SOURCE_KEY_REDACTED : "",
+        managementKey: source.managementKey.length > 0 ? SECRET_SETTING_REDACTED : "",
       },
     ]),
   );
-  return { ...settings, providerInstances, usageLimitSources };
+  const textToSpeech = {
+    ...settings.textToSpeech,
+    googleApiKey: settings.textToSpeech.googleApiKey.length > 0 ? SECRET_SETTING_REDACTED : "",
+  };
+  return { ...settings, providerInstances, usageLimitSources, textToSpeech };
 }
 
 export class ServerSettingsService extends Context.Service<
@@ -693,7 +700,7 @@ const make = Effect.gen(function* () {
       }
       const usageLimitSources: Record<string, UsageLimitSourceConfig> = {};
       for (const [sourceId, source] of Object.entries(settings.usageLimitSources)) {
-        if (source.managementKey !== USAGE_LIMIT_SOURCE_KEY_REDACTED) {
+        if (source.managementKey !== SECRET_SETTING_REDACTED) {
           usageLimitSources[sourceId] = source;
           continue;
         }
@@ -709,10 +716,25 @@ const make = Effect.gen(function* () {
           managementKey: Option.isSome(secret) ? textDecoder.decode(secret.value) : "",
         };
       }
+      let textToSpeech = settings.textToSpeech;
+      if (textToSpeech.googleApiKey === SECRET_SETTING_REDACTED) {
+        const secret = yield* secretStore
+          .get(TEXT_TO_SPEECH_KEY_SECRET_NAME)
+          .pipe(
+            Effect.mapError(
+              (cause) => new ServerSettingsError({ settingsPath, operation: "read-secret", cause }),
+            ),
+          );
+        textToSpeech = {
+          ...textToSpeech,
+          googleApiKey: Option.isSome(secret) ? textDecoder.decode(secret.value) : "",
+        };
+      }
       return {
         ...settings,
         providerInstances: providerInstances as ServerSettings["providerInstances"],
         usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
+        textToSpeech,
       };
     });
 
@@ -829,7 +851,7 @@ const make = Effect.gen(function* () {
       const usageLimitSources: Record<string, UsageLimitSourceConfig> = {};
       for (const [sourceId, source] of Object.entries(next.usageLimitSources)) {
         const secretName = usageLimitSourceSecretName(sourceId);
-        if (source.managementKey === USAGE_LIMIT_SOURCE_KEY_REDACTED) {
+        if (source.managementKey === SECRET_SETTING_REDACTED) {
           usageLimitSources[sourceId] = source;
           continue;
         }
@@ -843,7 +865,7 @@ const make = Effect.gen(function* () {
           secretName,
           value: textEncoder.encode(source.managementKey),
         });
-        usageLimitSources[sourceId] = { ...source, managementKey: USAGE_LIMIT_SOURCE_KEY_REDACTED };
+        usageLimitSources[sourceId] = { ...source, managementKey: SECRET_SETTING_REDACTED };
       }
       for (const sourceId of Object.keys(current.usageLimitSources)) {
         if (sourceId in next.usageLimitSources) continue;
@@ -854,11 +876,30 @@ const make = Effect.gen(function* () {
         });
       }
 
+      let textToSpeech = next.textToSpeech;
+      if (textToSpeech.googleApiKey.length === 0) {
+        if (current.textToSpeech.googleApiKey.length > 0) {
+          changes.push({
+            kind: "remove",
+            secretName: TEXT_TO_SPEECH_KEY_SECRET_NAME,
+            operation: "remove-secret",
+          });
+        }
+      } else if (textToSpeech.googleApiKey !== SECRET_SETTING_REDACTED) {
+        changes.push({
+          kind: "write",
+          secretName: TEXT_TO_SPEECH_KEY_SECRET_NAME,
+          value: textEncoder.encode(textToSpeech.googleApiKey),
+        });
+        textToSpeech = { ...textToSpeech, googleApiKey: SECRET_SETTING_REDACTED };
+      }
+
       return {
         settings: {
           ...next,
           providerInstances: providerInstances as ServerSettings["providerInstances"],
           usageLimitSources: usageLimitSources as ServerSettings["usageLimitSources"],
+          textToSpeech,
         },
         changes,
       };

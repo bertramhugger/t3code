@@ -1102,6 +1102,10 @@ export function createServerEnvironmentAtoms<R, E>(
       scheduler: configScheduler,
       concurrency: configConcurrency,
     }),
+    synthesizeSpeech: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:synthesize-speech",
+      tag: WS_METHODS.serverSynthesizeSpeech,
+    }),
     signalProcess: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:signal-process",
       tag: WS_METHODS.serverSignalProcess,
