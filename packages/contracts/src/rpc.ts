@@ -67,6 +67,11 @@ import {
 } from "./acpRegistry.ts";
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
+  ReadAloudError,
+  ReadAloudSynthesizeInput,
+  ReadAloudSynthesizeResult,
+} from "./readAloud.ts";
+import {
   AuthAccessStreamError,
   AuthAccessStreamEvent,
   EnvironmentAuthorizationError,
@@ -483,6 +488,7 @@ export const WS_METHODS = {
   serverRemoveKeybinding: "server.removeKeybinding",
   serverRunStorageCleanup: "server.runStorageCleanup",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
+  serverSynthesizeSpeech: "server.synthesizeSpeech",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -753,6 +759,11 @@ const WsServerRunStorageCleanupRpc = Rpc.make(WS_METHODS.serverRunStorageCleanup
   payload: Schema.Struct({}),
   success: StorageCleanupReport,
   error: Schema.Union([ServerSettingsError, EnvironmentAuthorizationError]),
+});
+const WsServerSynthesizeSpeechRpc = Rpc.make(WS_METHODS.serverSynthesizeSpeech, {
+  payload: ReadAloudSynthesizeInput,
+  success: ReadAloudSynthesizeResult,
+  error: Schema.Union([ReadAloudError, EnvironmentAuthorizationError]),
 });
 const WsServerGetStorageCleanupReportRpc = Rpc.make(WS_METHODS.serverGetStorageCleanupReport, {
   payload: Schema.Struct({}),
@@ -1902,6 +1913,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRemoveKeybindingRpc,
   WsServerRunStorageCleanupRpc,
   WsServerGetStorageCleanupReportRpc,
+  WsServerSynthesizeSpeechRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,

@@ -773,6 +773,18 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["browser preview clicks buttons drag overlay capture"],
   },
   {
+    id: "read-aloud-google-api-key",
+    title: "Google Cloud API key",
+    to: "/settings/integrations",
+    searchTerms: ["read aloud speak speech voice text to speech tts listen audio google"],
+  },
+  {
+    id: "read-aloud-voice",
+    title: "Read-aloud voice",
+    to: "/settings/integrations",
+    searchTerms: ["speak speech tts language accent google voice name"],
+  },
+  {
     id: "browser-link-target",
     title: "Open links in",
     to: "/settings/integrations",

@@ -1887,6 +1887,7 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
+  const readAloudEnabled = settings.readAloud.googleApiKey.length > 0;
   const navigate = useNavigate();
   const citationLocation = useLocation({
     select: (location) => ({
@@ -11357,6 +11358,7 @@ export default function ChatView(props: ChatViewProps) {
                 }
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
+                readAloudEnabled={readAloudEnabled}
                 workspaceRoot={
                   paintOnlyDisplayedTimeline
                     ? (heldPaintContext?.workspaceRoot ?? undefined)

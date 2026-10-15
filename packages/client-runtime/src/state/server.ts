@@ -1000,6 +1000,10 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverRunStorageCleanup,
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
+    synthesizeSpeech: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:synthesize-speech",
+      tag: WS_METHODS.serverSynthesizeSpeech,
+    }),
     storageCleanupReport: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:storage-cleanup-report",
       tag: WS_METHODS.serverGetStorageCleanupReport,

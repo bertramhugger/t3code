@@ -1535,6 +1535,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
               enabled: true,
             },
           },
+          readAloud: { googleApiKey: "google-tts-secret", voice: "en-US-Neural2-F" },
         });
         const values = [
           "config-secret",
@@ -1543,6 +1544,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           "bitbucket-secret",
           "gitcafe-secret",
           "quota-secret",
+          "google-tts-secret",
         ];
         const client = ServerSettingsModule.redactServerSettingsForClient(saved);
         const disk = yield* fs.readFileString(config.settingsPath);
@@ -1553,10 +1555,12 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         }
         assert.include(JSON.stringify(client), "https://example.test");
         assert.include(JSON.stringify(client), "me@example.test");
+        assert.deepEqual(client.readAloud, { googleApiKey: "••••••", voice: "en-US-Neural2-F" });
         const echoed = yield* service.updateSettings({
           providerInstances: client.providerInstances,
           sourceControlHosts: client.sourceControlHosts,
           usageLimitSources: client.usageLimitSources,
+          readAloud: client.readAloud,
         });
         for (const value of values) assert.include(JSON.stringify(echoed), value);
         const renamed = yield* service.updateProviderInstance({

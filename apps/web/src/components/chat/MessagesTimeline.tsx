@@ -186,6 +186,7 @@ import {
   timelineContentOverflowsViewport,
 } from "./timelineScrollAnchoring";
 import { MessageCopyButton } from "./MessageCopyButton";
+import { MessageReadAloudButton } from "./MessageReadAloudButton";
 import { promptLinkFor } from "../promptLinks/copyPromptLink";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { WorkspaceEntryIcon, WorkspaceEntryTooltip } from "./WorkspaceEntryIcon";
@@ -327,6 +328,8 @@ interface TimelineRowSharedState {
   /** Projection runs, for recovering handoff models on legacy items. */
   runs: ReadonlyArray<HandoffTimelineRun>;
   activeThreadEnvironmentId: EnvironmentId;
+  /** The environment has a Google Text-to-Speech key, so assistant messages can be read aloud. */
+  readAloudEnabled: boolean;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   /** Sends text an MCP App asked to post, after the user approved it. */
@@ -508,6 +511,7 @@ interface MessagesTimelineProps {
   onFileOpen?: (attachment: ChatFileAttachment) => void;
   onFileDownload?: (attachment: ChatFileAttachment) => void;
   activeThreadEnvironmentId: EnvironmentId;
+  readAloudEnabled?: boolean;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
@@ -614,6 +618,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onFileOpen = NOOP_OPEN_ATTACHMENT,
   onFileDownload = NOOP_OPEN_ATTACHMENT,
   activeThreadEnvironmentId,
+  readAloudEnabled = false,
   markdownCwd,
   resolvedTheme,
   timestampFormat,
@@ -1362,6 +1367,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       providerStatuses,
       runs,
       activeThreadEnvironmentId,
+      readAloudEnabled,
       onRevertToTurnCount,
       onRunShellCommand,
       findActive,
@@ -1400,6 +1406,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       providerStatuses,
       runs,
       activeThreadEnvironmentId,
+      readAloudEnabled,
       onRevertToTurnCount,
       onRunShellCommand,
       findActive,
@@ -2982,6 +2989,13 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
+      {ctx.readAloudEnabled ? (
+        <AssistantReadAloudButton
+          message={message}
+          showCopyButton={showCopyButton}
+          streaming={copyStreaming}
+        />
+      ) : null}
       {projectedItem?.item.type === "assistant_message" ? (
         <AssistantForkButton projectedItem={projectedItem} />
       ) : null}
@@ -3019,6 +3033,33 @@ function AssistantCopyButton({
   }
 
   return <MessageCopyButton text={assistantCopyState.text ?? ""} variant="ghost" />;
+}
+
+function AssistantReadAloudButton({
+  message,
+  showCopyButton,
+  streaming,
+}: {
+  message: ChatMessage;
+  showCopyButton: boolean;
+  streaming: boolean;
+}) {
+  const ctx = use(TimelineRowCtx);
+  // Readable exactly when copyable: finished, non-empty assistant text.
+  const { text, visible } = resolveAssistantMessageCopyState({
+    text: message.text ?? null,
+    showCopyButton,
+    streaming,
+  });
+  if (!visible || !text) return null;
+
+  return (
+    <MessageReadAloudButton
+      environmentId={ctx.activeThreadEnvironmentId}
+      messageKey={message.id}
+      text={text}
+    />
+  );
 }
 
 function ProposedPlanTimelineRow({

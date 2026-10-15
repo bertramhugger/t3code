@@ -1114,6 +1114,15 @@ export const StorageCleanupSettings = Schema.Struct({
 });
 export type StorageCleanupSettings = typeof StorageCleanupSettings.Type;
 
+/** Google Cloud Text-to-Speech credentials for reading assistant messages aloud. */
+export const ReadAloudSettings = Schema.Struct({
+  /** Empty hides the read-aloud button on every client of this environment. */
+  googleApiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("")), secretSetting),
+  /** A Google voice name such as `en-US-Neural2-F`. Empty uses Google's default en-US voice. */
+  voice: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+});
+export type ReadAloudSettings = typeof ReadAloudSettings.Type;
+
 export const ServerSettings = Schema.Struct({
   // Null means no client has migrated this preference yet; an empty value is
   // authoritative so another device cannot resurrect cleared preferences.
@@ -1130,6 +1139,9 @@ export const ServerSettings = Schema.Struct({
    * or `~/worktrees`. Empty uses `<T3 home>/worktrees`.
    */
   worktreesDirectory: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  readAloud: ReadAloudSettings.pipe(
+    Schema.withDecodingDefault(Effect.succeed(Schema.decodeSync(ReadAloudSettings)({}))),
+  ),
   /**
    * Custom locations used before the current one. Server-maintained so
    * worktrees left there stay eligible for cleanup and review diffs.
@@ -1556,6 +1568,12 @@ export const ServerSettingsPatch = Schema.Struct({
     }),
   ),
   worktreesDirectory: Schema.optionalKey(TrimmedString),
+  readAloud: Schema.optionalKey(
+    Schema.Struct({
+      googleApiKey: Schema.optionalKey(TrimmedString),
+      voice: Schema.optionalKey(TrimmedString),
+    }),
+  ),
   // Server settings
   responseStreamingMode: Schema.optionalKey(ResponseStreamingMode),
   enableProviderUpdateChecks: Schema.optionalKey(Schema.Boolean),

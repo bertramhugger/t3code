@@ -2,6 +2,7 @@ import {
   AntigravitySettings,
   ClaudeSettings,
   CodexSettings,
+  ReadAloudSettings,
   type ServerSettings,
   UsageLimitSourceConfig,
   secretSettingsFields,
@@ -31,6 +32,7 @@ const providerSecretFields = new Map([
   ),
 ]);
 const usageLimitSecretFields = secretSettingsFields(UsageLimitSourceConfig);
+const readAloudSecretFields = secretSettingsFields(ReadAloudSettings);
 const encode = (value: string) => Buffer.from(value, "utf8").toString("base64url");
 
 export interface SettingsSecret {
@@ -146,5 +148,11 @@ export function mapSettingsSecrets(
     ]),
   ) as ServerSettings["usageLimitSources"];
 
-  return { ...settings, providerInstances, sourceControlHosts, usageLimitSources };
+  const readAloud = mapFields(
+    settings.readAloud,
+    readAloudSecretFields,
+    (field) => `read-aloud-${encode(field)}`,
+  ) as ServerSettings["readAloud"];
+
+  return { ...settings, providerInstances, sourceControlHosts, usageLimitSources, readAloud };
 }
