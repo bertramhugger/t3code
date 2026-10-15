@@ -306,6 +306,23 @@ describe("scoped settings writes", () => {
       ).toEqual({ saved: [laptop.label], failed: unsupported });
     });
 
+    it("accepts a replaced secret that comes back redacted", async () => {
+      const keyed = [
+        environment("Laptop", { settings: { readAloud: { googleApiKey: "••••••", voice: "" } } }),
+      ];
+      const result = await persistScopedSettingsPatch(
+        planScopedSettingsPatch(resolveSettingsScope({}, [], keyed), keyed, {
+          readAloud: { googleApiKey: "AIza-new" },
+        }),
+        vi.fn(async () => ({
+          _tag: "Success" as const,
+          value: { ...DEFAULT_SERVER_SETTINGS, readAloud: { googleApiKey: "••••••", voice: "" } },
+        })),
+        vi.fn(),
+      );
+      expect(result.failedEnvironments).toEqual([]);
+    });
+
     it("accepts a write that matches what the environment already had", async () => {
       expect(
         await outcome(

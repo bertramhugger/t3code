@@ -585,6 +585,9 @@ declare module "effect/Schema" {
   }
 }
 
+/** What clients receive in place of a stored secret. Sending it back keeps the stored value. */
+export const SETTINGS_SECRET_REDACTED = "\u2022\u2022\u2022\u2022\u2022\u2022";
+
 /** Mark a string or a record of strings as a credential in its settings schema. */
 export function secretSetting<S extends Schema.Top>(schema: S): S["Rebuild"] {
   return schema.annotateKey({ settingsSecret: true });

@@ -10,6 +10,7 @@ import {
   ServerSettings,
   type T3ProjectFile,
   type ServerSettingsPatch,
+  SETTINGS_SECRET_REDACTED,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
 import {
@@ -416,6 +417,10 @@ function writeWasDropped(value: unknown, before: unknown, saved: unknown): boole
     return Object.entries(value).some(([key, next]) =>
       writeWasDropped(next, field(before, key), field(saved, key)),
     );
+  }
+  // A stored secret always comes back redacted, so replacing one looks like no change.
+  if (typeof value === "string" && value.length > 0 && saved === SETTINGS_SECRET_REDACTED) {
+    return false;
   }
   const unchanged =
     typeof value === "string" && typeof before === "string"
