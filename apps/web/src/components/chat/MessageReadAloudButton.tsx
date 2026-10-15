@@ -14,13 +14,26 @@ import { toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 // One voice at a time across the whole app: starting a message stops the last one.
-let playing: { readonly key: string; readonly audio: HTMLAudioElement } | null = null;
+let playing: {
+  readonly key: string;
+  readonly audio: HTMLAudioElement;
+  readonly url: string;
+} | null = null;
 const listeners = new Set<() => void>();
 
 function setPlaying(next: typeof playing) {
-  playing?.audio.pause();
+  if (playing) {
+    playing.audio.pause();
+    URL.revokeObjectURL(playing.url);
+  }
   playing = next;
   for (const listener of listeners) listener();
+}
+
+// A blob URL, not a data URL: the desktop app's CSP allows `blob:` media only.
+function audioUrl(base64: string): string {
+  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+  return URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
 }
 
 function subscribe(listener: () => void) {
@@ -58,11 +71,12 @@ export const MessageReadAloudButton = memo(function MessageReadAloudButton({
         });
         return;
       }
-      const audio = new Audio(`data:audio/mpeg;base64,${result.value.audioContent}`);
+      const url = audioUrl(result.value.audioContent);
+      const audio = new Audio(url);
       audio.addEventListener("ended", () => {
         if (playing?.audio === audio) setPlaying(null);
       });
-      setPlaying({ key: messageKey, audio });
+      setPlaying({ key: messageKey, audio, url });
       await audio.play().catch((error: unknown) => {
         if (playing?.audio === audio) setPlaying(null);
         toastManager.add({
