@@ -67,6 +67,56 @@ function messageTextRoot(messageKey: string): Element | null {
   );
 }
 
+/** The segment holding the character at `keyIndex`, or the next one when it falls between them. */
+export function segmentAtKeyIndex(
+  located: ReadonlyArray<{ start: number; end: number } | null>,
+  keyIndex: number,
+): number | null {
+  let next: number | null = null;
+  for (const [index, match] of located.entries()) {
+    if (!match) continue;
+    if (keyIndex >= match.start && keyIndex < match.end) return index;
+    if (match.start > keyIndex && next === null) next = index;
+  }
+  return next;
+}
+
+/** The click's position in the message's match key, or null outside its text. */
+export function speechKeyIndexAtPoint(messageKey: string, x: number, y: number): number | null {
+  const root = messageTextRoot(messageKey);
+  if (!root) return null;
+  const caret = document.caretPositionFromPoint?.(x, y);
+  const legacy = caret ? null : document.caretRangeFromPoint?.(x, y);
+  const node = caret?.offsetNode ?? legacy?.startContainer;
+  const offset = caret?.offset ?? legacy?.startOffset ?? 0;
+  if (!node || !root.contains(node)) return null;
+  const at = document.createRange();
+  at.setStart(node, offset);
+  const { positions } = indexMessageText(root);
+  const index = positions.findIndex(
+    (position) => at.comparePoint(position.node, position.offset) >= 0,
+  );
+  return index === -1 ? null : index;
+}
+
+/** Which segment a click landed in, given where it fell in the message's text. */
+export function segmentAtSpeechKey(
+  messageKey: string,
+  segments: readonly ReadAloudSegment[],
+  keyIndex: number,
+): number | null {
+  const root = messageTextRoot(messageKey);
+  if (!root) return null;
+  const { key } = indexMessageText(root);
+  return segmentAtKeyIndex(
+    locateSegments(
+      key,
+      segments.map((segment) => segment.text),
+    ),
+    keyIndex,
+  );
+}
+
 let highlighted: Range | null = null;
 
 /**

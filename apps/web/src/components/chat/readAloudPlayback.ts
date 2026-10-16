@@ -1,4 +1,4 @@
-import { type EnvironmentId, ReadAloudError } from "@t3tools/contracts";
+import { type EnvironmentId, ReadAloudError, type ReadAloudSegment } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -12,6 +12,7 @@ import { toastManager } from "../ui/toast";
 import {
   clearSpokenHighlight,
   highlightSpokenSegment,
+  segmentAtSpeechKey,
   spokenHighlightIsAttached,
 } from "./readAloudHighlight";
 
@@ -29,6 +30,7 @@ type Playback =
       readonly phase: "playing";
       readonly audio: HTMLAudioElement;
       readonly url: string;
+      readonly segments: readonly ReadAloudSegment[];
     };
 
 let current: Playback | null = null;
@@ -55,6 +57,22 @@ function audioUrl(base64: string, mimeType: string): string {
   return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
 }
 
+/** The phase of `key` outside React, for click handlers. */
+export function readAloudPhaseOf(key: string): ReadAloudPhase {
+  return current?.key === key ? current.phase : "idle";
+}
+
+/**
+ * Jumps the playing message to the sentence at `speechKey`, a click's position
+ * in the message's text (see `speechKeyIndexAtPoint`).
+ */
+export function seekReadAloud(key: string, speechKey: number): void {
+  if (current?.phase !== "playing" || current.key !== key) return;
+  const index = segmentAtSpeechKey(key, current.segments, speechKey);
+  const segment = index === null ? undefined : current.segments[index];
+  if (segment) current.audio.currentTime = segment.start;
+}
+
 /** What the message identified by `key` is doing right now. */
 export function useReadAloudPhase(key: string): ReadAloudPhase {
   return useSyncExternalStore(subscribe, () => (current?.key === key ? current.phase : "idle"));
@@ -68,7 +86,13 @@ export function useToggleReadAloud() {
   const synthesize = useAtomCommand(serverEnvironment.synthesizeSpeech, { reportFailure: false });
 
   return useCallback(
-    async (input: { environmentId: EnvironmentId; key: string; text: string }) => {
+    async (input: {
+      environmentId: EnvironmentId;
+      key: string;
+      text: string;
+      /** Start at the sentence holding this position in the message's text, from a click. */
+      startAtSpeechKey?: number;
+    }) => {
       if (current?.key === input.key) {
         setCurrent(null);
         return;
@@ -118,7 +142,11 @@ export function useToggleReadAloud() {
       audio.addEventListener("ended", () => {
         if (isCurrent()) setCurrent(null);
       });
-      setCurrent({ key: input.key, phase: "playing", audio, url });
+      if (input.startAtSpeechKey !== undefined) {
+        const index = segmentAtSpeechKey(input.key, segments, input.startAtSpeechKey);
+        if (index !== null) audio.currentTime = segments[index]!.start;
+      }
+      setCurrent({ key: input.key, phase: "playing", audio, url, segments });
       await audio.play().catch((error: unknown) => {
         if (isCurrent()) setCurrent(null);
         toastManager.add({

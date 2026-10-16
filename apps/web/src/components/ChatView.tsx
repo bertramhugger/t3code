@@ -461,7 +461,13 @@ import {
   resolveTimelineIsAtEnd,
   worktreeSetupAgentStarted,
 } from "./chat/MessagesTimeline.logic";
-import { subscribeReadLatestMessage, useToggleReadAloud } from "./chat/readAloudPlayback";
+import {
+  readAloudPhaseOf,
+  seekReadAloud,
+  subscribeReadLatestMessage,
+  useToggleReadAloud,
+} from "./chat/readAloudPlayback";
+import { speechKeyIndexAtPoint } from "./chat/readAloudHighlight";
 import {
   overlayComposerIsResting,
   resolveComposerTimelineInset,
@@ -7029,6 +7035,48 @@ export default function ChatView(props: ChatViewProps) {
     void toggleReadAloud({ environmentId: readAloudEnvironmentId, key: message.id, text });
   };
   const readLatestMessageAloudStable = useStableCallback(readLatestMessageAloud);
+  // A click on a sentence of the message being read jumps there; Option/Alt-click on a
+  // finished agent message starts reading it from that sentence. Plain clicks elsewhere,
+  // drags that select text, and clicks on links or code are left alone.
+  const readAloudFromClick = (event: MouseEvent) => {
+    if (readAloudEnvironmentId === null || event.button !== 0) return;
+    if (!(event.target instanceof Element)) return;
+    if (event.target.closest("a, button, pre, code, input, textarea, summary, [role='button']"))
+      return;
+    if (!event.target.closest("[data-thread-find-text]")) return;
+    const row = event.target.closest(
+      "[data-timeline-row-kind='message'][data-message-role='assistant']",
+    );
+    const messageId = row?.getAttribute("data-message-id");
+    if (!messageId || !window.getSelection()?.isCollapsed) return;
+    const phase = readAloudPhaseOf(messageId);
+    if (phase === "loading" || (phase === "idle" && !event.altKey)) return;
+    const speechKey = speechKeyIndexAtPoint(messageId, event.clientX, event.clientY);
+    if (speechKey === null) return;
+    event.preventDefault();
+    if (phase === "playing") {
+      seekReadAloud(messageId, speechKey);
+      return;
+    }
+    const message = timelineMessages.find((candidate) => candidate.id === messageId);
+    const { text } = resolveAssistantMessageCopyState({
+      text: message?.text ?? null,
+      showCopyButton: true,
+      streaming: Boolean(message?.streaming),
+    });
+    if (!text) return;
+    void toggleReadAloud({
+      environmentId: readAloudEnvironmentId,
+      key: messageId,
+      text,
+      startAtSpeechKey: speechKey,
+    });
+  };
+  const readAloudFromClickStable = useStableCallback(readAloudFromClick);
+  useEffect(() => {
+    document.addEventListener("click", readAloudFromClickStable);
+    return () => document.removeEventListener("click", readAloudFromClickStable);
+  }, [readAloudFromClickStable]);
   useEffect(
     () => subscribeReadLatestMessage(readLatestMessageAloudStable),
     [readLatestMessageAloudStable],

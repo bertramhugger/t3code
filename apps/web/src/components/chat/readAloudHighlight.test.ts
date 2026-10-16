@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { locateSegments, speechMatchKey } from "./readAloudHighlight";
+import { locateSegments, segmentAtKeyIndex, speechMatchKey } from "./readAloudHighlight";
 
 describe("speechMatchKey", () => {
   it("keeps only lowercased letters and digits", () => {
@@ -28,5 +28,16 @@ describe("locateSegments", () => {
       null,
       { start: 17, end: 21 },
     ]);
+  });
+});
+
+describe("segmentAtKeyIndex", () => {
+  const located = [{ start: 0, end: 4 }, null, { start: 10, end: 20 }];
+
+  it("picks the sentence a click lands in, or the next one after a gap", () => {
+    expect(segmentAtKeyIndex(located, 2)).toBe(0);
+    expect(segmentAtKeyIndex(located, 6)).toBe(2);
+    expect(segmentAtKeyIndex(located, 15)).toBe(2);
+    expect(segmentAtKeyIndex(located, 25)).toBeNull();
   });
 });

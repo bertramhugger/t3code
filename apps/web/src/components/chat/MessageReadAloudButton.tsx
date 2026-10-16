@@ -1,5 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { SquareIcon, Volume2Icon } from "lucide-react";
+import { isMacPlatform } from "@t3tools/shared/keybindings";
 import { memo } from "react";
 
 import { cn } from "~/lib/utils";
@@ -22,6 +23,12 @@ export const MessageReadAloudButton = memo(function MessageReadAloudButton({
   const phase = useReadAloudPhase(messageKey);
   const label =
     phase === "loading" ? "Preparing audio…" : phase === "playing" ? "Stop reading" : "Read aloud";
+  const hint =
+    phase === "playing"
+      ? "Click a sentence to jump to it"
+      : phase === "idle"
+        ? `${isMacPlatform(navigator.platform) ? "Option" : "Alt"}-click a sentence to start there`
+        : null;
 
   return (
     <Tooltip>
@@ -43,7 +50,10 @@ export const MessageReadAloudButton = memo(function MessageReadAloudButton({
           <Volume2Icon className={cn("size-3", phase === "loading" && "animate-pulse")} />
         )}
       </TooltipTrigger>
-      <TooltipPopup side="top">{label}</TooltipPopup>
+      <TooltipPopup side="top">
+        {label}
+        {hint ? <span className="block text-muted-foreground">{hint}</span> : null}
+      </TooltipPopup>
     </Tooltip>
   );
 });

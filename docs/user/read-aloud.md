@@ -5,6 +5,11 @@ read-aloud button sits next to the copy button on each finished agent message. C
 and click it again to stop. Starting another message stops the one playing. While a message is
 read, the sentence being spoken is highlighted in the message.
 
+To start partway through, **Option-click** (**Alt-click** on Windows and Linux) a sentence in a
+finished agent message: it is read from that sentence on. While a message is being read, click
+any of its sentences to jump there. Clicks on links and code, and drags that select text, work as
+usual.
+
 To hear the latest agent message without reaching for the mouse, press `mod+alt+r`
 (**Cmd+Option+R** on macOS, **Ctrl+Alt+R** elsewhere) or run **Read latest message aloud** from
 the command palette. Press it again to stop. You can change the shortcut under
