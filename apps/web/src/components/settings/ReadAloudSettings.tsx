@@ -1,15 +1,12 @@
 import {
   type EnvironmentId,
-  READ_ALOUD_GEMINI_MODELS,
   READ_ALOUD_PITCH,
   READ_ALOUD_SPEAKING_RATE,
-  READ_ALOUD_STYLE_PROMPT_MAX_LENGTH,
-  type ReadAloudGeminiModel,
-  speechVoiceFamily,
+  speechVoiceLanguage,
   speechVoiceOptions,
 } from "@t3tools/contracts";
 import { CheckIcon, ExternalLinkIcon, PlayIcon, SquareIcon } from "lucide-react";
-import { type ReactNode, useMemo, useRef, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { serverEnvironment } from "~/state/server";
 import { useEnvironmentQuery } from "~/state/query";
@@ -25,15 +22,7 @@ import {
   ComboboxTrigger,
 } from "../ui/combobox";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "../ui/number-field";
-import {
-  Select,
-  SelectButton,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "../ui/select";
-import { Textarea } from "../ui/textarea";
+import { SelectButton } from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SecretInput } from "./SecretInput";
 import { effectiveLanguage, languageLabel, voiceOptions } from "./readAloudVoices";
@@ -44,11 +33,6 @@ import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings"
 
 const PREVIEW_KEY = "settings:read-aloud-preview";
 const PREVIEW_TEXT = "Hi! This is how your agent's messages will sound when they're read aloud.";
-const GEMINI_MODEL_LABELS: Record<ReadAloudGeminiModel, string> = {
-  "gemini-2.5-flash-tts": "Gemini 2.5 Flash",
-  "gemini-2.5-pro-tts": "Gemini 2.5 Pro",
-  "gemini-3.1-flash-tts-preview": "Gemini 3.1 Flash (preview)",
-};
 // Speed and pitch are exact numbers; grouping or rounding would misreport them.
 const DECIMAL_FORMAT: Intl.NumberFormatOptions = { maximumFractionDigits: 2 };
 
@@ -64,7 +48,7 @@ function apiLink(href: string, children: ReactNode) {
 /**
  * Google Cloud Text-to-Speech for the read-aloud button on assistant messages.
  * The key lives in the server's secret store; clients only learn that one is set.
- * Voice options follow the chosen voice, since Google's families accept different ones.
+ * Pitch only shows for voices that accept it; Chirp voices reject it.
  */
 export function ReadAloudSettings() {
   const settings = useScopedSettings();
@@ -121,7 +105,8 @@ function VoiceSettings() {
   const updateSettings = useUpdateScopedSettings();
   const language = effectiveLanguage(readAloud.voice, readAloud.languageCode);
   const options = speechVoiceOptions(readAloud.voice);
-  const gemini = speechVoiceFamily(readAloud.voice) === "gemini";
+  // A name without a language (an old Gemini choice) plays Google's default voice.
+  const voice = speechVoiceLanguage(readAloud.voice) === null ? "" : readAloud.voice;
   const catalog = useEnvironmentQuery(
     environmentId === null
       ? null
@@ -142,13 +127,11 @@ function VoiceSettings() {
       detail: voice.detail,
     }));
     const current =
-      readAloud.voice.length > 0 && !listed.some((voice) => voice.value === readAloud.voice)
-        ? [{ value: readAloud.voice, label: readAloud.voice, detail: "" }]
+      voice.length > 0 && !listed.some((option) => option.value === voice)
+        ? [{ value: voice, label: voice, detail: "" }]
         : [];
     return [{ value: "", label: "Google default", detail: "" }, ...current, ...listed];
-  }, [catalog.data, readAloud.voice]);
-
-  const styleEdited = useRef(false);
+  }, [catalog.data, voice]);
 
   return (
     <>
@@ -164,20 +147,15 @@ function VoiceSettings() {
             items={languages}
             value={language}
             onChange={(languageCode) =>
-              updateSettings({
-                // A voice named for another language would ignore the switch.
-                readAloud: gemini ? { languageCode } : { languageCode, voice: "" },
-              })
+              // A voice named for another language would ignore the switch.
+              updateSettings({ readAloud: { languageCode, voice: "" } })
             }
           />
         }
       />
       <SettingsRow
         {...searchableSetting("read-aloud-voice")}
-        description={
-          catalog.error ??
-          "Gemini voices follow a style you describe. Chirp 3 HD voices sound the most natural."
-        }
+        description={catalog.error ?? "Chirp 3 HD voices sound the most natural."}
         serverScoped
         settingKeys={["readAloud"]}
         resetAction={
@@ -194,53 +172,51 @@ function VoiceSettings() {
               ariaLabel="Read-aloud voice"
               searchPlaceholder={catalog.isPending ? "Loading voices…" : "Search voices"}
               items={voices}
-              value={readAloud.voice}
-              onChange={(voice) => updateSettings({ readAloud: { voice } })}
+              value={voice}
+              onChange={(next) => updateSettings({ readAloud: { voice: next } })}
             />
             {environmentId === null ? null : <PreviewButton environmentId={environmentId} />}
           </div>
         }
       />
-      {options.speakingRate ? (
-        <SettingsRow
-          {...searchableSetting("read-aloud-speed")}
-          description="1 is normal speed. Google accepts 0.25 to 4."
-          serverScoped
-          settingKeys={["readAloud"]}
-          resetAction={
-            readAloud.speakingRate !== READ_ALOUD_SPEAKING_RATE.default ? (
-              <SettingResetButton
-                label="speed"
-                onClick={() =>
-                  updateSettings({
-                    readAloud: { speakingRate: READ_ALOUD_SPEAKING_RATE.default },
-                  })
-                }
-              />
-            ) : null
-          }
-          control={
-            <NumberField
-              aria-label="Speed"
-              value={readAloud.speakingRate}
-              min={READ_ALOUD_SPEAKING_RATE.min}
-              max={READ_ALOUD_SPEAKING_RATE.max}
-              step={0.05}
-              format={DECIMAL_FORMAT}
-              size="sm"
-              className="w-24"
-              onValueCommitted={(speakingRate) => {
-                if (speakingRate !== null && speakingRate !== readAloud.speakingRate)
-                  updateSettings({ readAloud: { speakingRate } });
-              }}
-            >
-              <NumberFieldGroup>
-                <NumberFieldInput />
-              </NumberFieldGroup>
-            </NumberField>
-          }
-        />
-      ) : null}
+      <SettingsRow
+        {...searchableSetting("read-aloud-speed")}
+        description="1 is normal speed. Google accepts 0.25 to 4."
+        serverScoped
+        settingKeys={["readAloud"]}
+        resetAction={
+          readAloud.speakingRate !== READ_ALOUD_SPEAKING_RATE.default ? (
+            <SettingResetButton
+              label="speed"
+              onClick={() =>
+                updateSettings({
+                  readAloud: { speakingRate: READ_ALOUD_SPEAKING_RATE.default },
+                })
+              }
+            />
+          ) : null
+        }
+        control={
+          <NumberField
+            aria-label="Speed"
+            value={readAloud.speakingRate}
+            min={READ_ALOUD_SPEAKING_RATE.min}
+            max={READ_ALOUD_SPEAKING_RATE.max}
+            step={0.05}
+            format={DECIMAL_FORMAT}
+            size="sm"
+            className="w-24"
+            onValueCommitted={(speakingRate) => {
+              if (speakingRate !== null && speakingRate !== readAloud.speakingRate)
+                updateSettings({ readAloud: { speakingRate } });
+            }}
+          >
+            <NumberFieldGroup>
+              <NumberFieldInput />
+            </NumberFieldGroup>
+          </NumberField>
+        }
+      />
       {options.pitch ? (
         <SettingsRow
           {...searchableSetting("read-aloud-pitch")}
@@ -276,80 +252,6 @@ function VoiceSettings() {
             </NumberField>
           }
         />
-      ) : null}
-      {gemini ? (
-        <>
-          <SettingsRow
-            {...searchableSetting("read-aloud-gemini-model")}
-            description={
-              <>
-                Gemini voices also need the Agent Platform API enabled in the same Google Cloud
-                project.{" "}
-                {apiLink(
-                  "https://console.cloud.google.com/apis/library/aiplatform.googleapis.com",
-                  "Enable it",
-                )}
-              </>
-            }
-            serverScoped
-            settingKeys={["readAloud"]}
-            control={
-              <Select
-                value={readAloud.geminiModel}
-                onValueChange={(geminiModel) => {
-                  if (geminiModel) updateSettings({ readAloud: { geminiModel } });
-                }}
-              >
-                <SelectTrigger size="sm" aria-label="Gemini model">
-                  <SelectValue>
-                    {(value: ReadAloudGeminiModel) => GEMINI_MODEL_LABELS[value]}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {READ_ALOUD_GEMINI_MODELS.map((model) => (
-                    <SelectItem key={model} value={model}>
-                      {GEMINI_MODEL_LABELS[model]}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            }
-          />
-          <SettingsRow
-            {...searchableSetting("read-aloud-style")}
-            description="Describe how the voice should read: tone, pace, accent, or character. Leave empty for a neutral read."
-            serverScoped
-            settingKeys={["readAloud"]}
-            resetAction={
-              readAloud.stylePrompt ? (
-                <SettingResetButton
-                  label="reading style"
-                  onClick={() => updateSettings({ readAloud: { stylePrompt: "" } })}
-                />
-              ) : null
-            }
-          >
-            <div className="mt-3 max-w-2xl pb-3.5">
-              <Textarea
-                key={readAloud.stylePrompt}
-                aria-label="Reading style"
-                rows={3}
-                maxLength={READ_ALOUD_STYLE_PROMPT_MAX_LENGTH}
-                defaultValue={readAloud.stylePrompt}
-                placeholder="Read in a calm, warm voice, a little faster than normal, like a friendly podcast host."
-                onChange={() => {
-                  styleEdited.current = true;
-                }}
-                onBlur={(event) => {
-                  const stylePrompt = event.target.value.trim();
-                  if (styleEdited.current && stylePrompt !== readAloud.stylePrompt)
-                    updateSettings({ readAloud: { stylePrompt } });
-                  styleEdited.current = false;
-                }}
-              />
-            </div>
-          </SettingsRow>
-        </>
       ) : null}
     </>
   );

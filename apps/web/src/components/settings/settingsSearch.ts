@@ -788,7 +788,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "read-aloud-voice",
     title: "Read-aloud voice",
     to: "/settings/integrations",
-    searchTerms: ["speak speech tts accent google voice gemini chirp preview sample"],
+    searchTerms: ["speak speech tts accent google voice chirp preview sample"],
   },
   {
     id: "read-aloud-speed",
@@ -801,18 +801,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Read-aloud pitch",
     to: "/settings/integrations",
     searchTerms: ["speak speech tts voice pitch tone higher lower"],
-  },
-  {
-    id: "read-aloud-gemini-model",
-    title: "Gemini voice model",
-    to: "/settings/integrations",
-    searchTerms: ["read aloud speak speech tts gemini flash pro model"],
-  },
-  {
-    id: "read-aloud-style",
-    title: "Reading style",
-    to: "/settings/integrations",
-    searchTerms: ["read aloud speak speech tts gemini prompt describe tone emotion style"],
   },
   {
     id: "browser-link-target",

@@ -18,7 +18,7 @@ import {
   type ReadAloudSynthesizeResult,
   type ReadAloudVoice,
   type ReadAloudVoiceList,
-  speechVoiceFamily,
+  speechVoiceLanguage,
   speechVoiceOptions,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
@@ -31,9 +31,8 @@ import * as Settings from "../serverSettings.ts";
 
 const SYNTHESIZE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const VOICES_URL = "https://texttospeech.googleapis.com/v1/voices";
-// Google caps `input.text` at 5000 bytes, and at 4000 for Gemini voices; leave headroom.
+// Google caps `input.text` at 5000 bytes; leave headroom for multi-byte text.
 const MAX_CHUNK_BYTES = 4_500;
-const MAX_GEMINI_CHUNK_BYTES = 3_500;
 const DEFAULT_LANGUAGE_CODE = "en-US";
 
 export class ReadAloud extends Context.Service<
@@ -113,29 +112,24 @@ function splitOversized(sentence: string, maxBytes: number): string[] {
 
 /**
  * The `voice` part of a request. A voice named for a language (`da-DK-Wavenet-A`)
- * must be sent with that language; a Gemini voice (`Kore`) speaks the chosen one
- * and needs its model named.
+ * must be sent with that language. A name without one (an old Gemini choice)
+ * falls back to Google's default voice for the chosen language.
  */
-export function voiceSelection(
-  settings: Pick<ReadAloudSettings, "voice" | "languageCode" | "geminiModel">,
-): { languageCode: string; name?: string; modelName?: string } {
-  const languageCode = settings.languageCode || DEFAULT_LANGUAGE_CODE;
-  if (settings.voice.length === 0) return { languageCode };
-  if (speechVoiceFamily(settings.voice) === "gemini") {
-    return { languageCode, name: settings.voice, modelName: settings.geminiModel };
-  }
-  return {
-    languageCode: /^([a-z]{2,3}-[a-z]{2,3})-/i.exec(settings.voice)?.[1] ?? languageCode,
-    name: settings.voice,
-  };
+export function voiceSelection(settings: Pick<ReadAloudSettings, "voice" | "languageCode">): {
+  languageCode: string;
+  name?: string;
+} {
+  const voiceLanguage = speechVoiceLanguage(settings.voice);
+  if (voiceLanguage === null)
+    return { languageCode: settings.languageCode || DEFAULT_LANGUAGE_CODE };
+  return { languageCode: voiceLanguage, name: settings.voice };
 }
 
 /** The request body for one chunk, carrying only the options the voice accepts. */
 export function synthesizeRequestBody(settings: ReadAloudSettings, text: string) {
   const options = speechVoiceOptions(settings.voice);
-  const prompt = options.stylePrompt ? settings.stylePrompt : "";
   return {
-    input: prompt.length > 0 ? { text, prompt } : { text },
+    input: { text },
     voice: voiceSelection(settings),
     audioConfig: {
       audioEncoding: "MP3",
@@ -183,7 +177,10 @@ const decodeGoogleError = Schema.decodeUnknownOption(GoogleErrorResponse);
 
 const VOICE_GENDERS = { FEMALE: "female", MALE: "male", NEUTRAL: "neutral" } as const;
 
-/** Narrows Google's catalog to one language. Gemini voices are listed as en-US but speak every language. */
+/**
+ * Narrows Google's catalog to one language. Gemini voices are left out: they
+ * need OAuth credentials, which an API key cannot provide.
+ */
 export function voiceListForLanguage(
   voices: typeof VoicesResponse.Type.voices,
   languageCode: string,
@@ -192,9 +189,9 @@ export function voiceListForLanguage(
   const languageCodes = new Set<string>();
   const matching: ReadAloudVoice[] = [];
   for (const voice of voices) {
-    const gemini = speechVoiceFamily(voice.name) === "gemini";
-    if (!gemini) for (const code of voice.languageCodes) languageCodes.add(code);
-    if (gemini || voice.languageCodes.some((code) => code.toLowerCase() === wanted)) {
+    if (speechVoiceLanguage(voice.name) === null) continue;
+    for (const code of voice.languageCodes) languageCodes.add(code);
+    if (voice.languageCodes.some((code) => code.toLowerCase() === wanted)) {
       matching.push({
         name: voice.name,
         gender: VOICE_GENDERS[voice.ssmlGender as keyof typeof VOICE_GENDERS] ?? null,
@@ -221,9 +218,7 @@ export function googleError(body: unknown, status: number): ReadAloudError {
   if (disabled?.activationUrl) {
     const service = disabled.serviceTitle ?? "A required API";
     return new ReadAloudError({
-      detail: `${service} is turned off in your Google Cloud project${
-        service === "Agent Platform API" ? ", and Gemini voices need it" : ""
-      }. Enable it, wait a minute, and try again.`,
+      detail: `${service} is turned off in your Google Cloud project. Enable it, wait a minute, and try again.`,
       actionUrl: disabled.activationUrl,
     });
   }
@@ -291,9 +286,7 @@ export const make = Effect.gen(function* () {
 
   const synthesize = Effect.fn("ReadAloud.synthesize")(function* (text: string) {
     const settings = yield* readSettings;
-    const maxBytes =
-      speechVoiceFamily(settings.voice) === "gemini" ? MAX_GEMINI_CHUNK_BYTES : MAX_CHUNK_BYTES;
-    const chunks = splitSpeechChunks(speechTextFromMarkdown(text), maxBytes);
+    const chunks = splitSpeechChunks(speechTextFromMarkdown(text));
     if (chunks.length === 0) {
       return yield* new ReadAloudError({ detail: "This message has nothing to read aloud." });
     }

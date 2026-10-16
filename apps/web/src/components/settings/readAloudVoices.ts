@@ -1,13 +1,12 @@
-import { type ReadAloudVoice, speechVoiceFamily } from "@t3tools/contracts";
+import { type ReadAloudVoice, speechVoiceLanguage } from "@t3tools/contracts";
 
 const KIND_LABELS: Record<string, string> = {
   "Chirp3-HD": "Chirp 3 HD",
   "Chirp-HD": "Chirp HD",
   Wavenet: "WaveNet",
 };
-// Most expressive first: Gemini takes style prompts, Chirp sounds the most natural.
+// Most natural-sounding first.
 const KIND_ORDER = [
-  "Gemini",
   "Chirp 3 HD",
   "Chirp HD",
   "Studio",
@@ -31,14 +30,10 @@ export interface VoiceOption {
 export function describeVoice(voice: Pick<ReadAloudVoice, "name"> & Partial<ReadAloudVoice>) {
   let label = voice.name;
   let kind = "Other";
-  if (speechVoiceFamily(voice.name) === "gemini") {
-    kind = "Gemini";
-  } else {
-    const match = /^[a-z]{2,3}-[a-z]{2,3}-(.+)-([^-]+)$/i.exec(voice.name);
-    if (match) {
-      kind = KIND_LABELS[match[1]!] ?? match[1]!;
-      label = /^[A-Z0-9]{1,2}$/.test(match[2]!) ? `${kind} ${match[2]}` : match[2]!;
-    }
+  const match = /^[a-z]{2,3}-[a-z]{2,3}-(.+)-([^-]+)$/i.exec(voice.name);
+  if (match) {
+    kind = KIND_LABELS[match[1]!] ?? match[1]!;
+    label = /^[A-Z0-9]{1,2}$/.test(match[2]!) ? `${kind} ${match[2]}` : match[2]!;
   }
   const detail = voice.gender ? `${kind} · ${voice.gender}` : kind;
   return { name: voice.name, label, detail, kind } satisfies VoiceOption;
@@ -78,9 +73,5 @@ export function languageLabel(code: string): string {
 
 /** The language a voice speaks: its name prefix, else the chosen language, else en-US. */
 export function effectiveLanguage(voice: string, languageCode: string): string {
-  if (speechVoiceFamily(voice) !== "gemini") {
-    const prefix = /^([a-z]{2,3}-[a-z]{2,3})-/i.exec(voice)?.[1];
-    if (prefix) return prefix;
-  }
-  return languageCode || "en-US";
+  return speechVoiceLanguage(voice) ?? (languageCode || "en-US");
 }

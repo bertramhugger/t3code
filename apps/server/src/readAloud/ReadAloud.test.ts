@@ -91,30 +91,17 @@ describe("synthesizeRequestBody", () => {
     });
   });
 
-  it("sends a Gemini voice its model, chosen language, and style prompt", () => {
-    const body = ReadAloud.synthesizeRequestBody(
-      readAloudSettings({
-        voice: "Kore",
-        languageCode: "da-DK",
-        stylePrompt: "Calm and warm.",
-        geminiModel: "gemini-2.5-pro-tts",
-        speakingRate: 1.5,
-        pitch: 4,
-      }),
-      "Hej.",
-    );
-    expect(body.input).toEqual({ text: "Hej.", prompt: "Calm and warm." });
-    expect(body.voice).toEqual({
-      languageCode: "da-DK",
-      name: "Kore",
-      modelName: "gemini-2.5-pro-tts",
-    });
-    // Gemini voices take pace from the prompt; Google rejects pitch.
-    expect(body.audioConfig).toEqual({ audioEncoding: "MP3" });
+  it("falls back to the default voice for a name without a language", () => {
+    expect(
+      ReadAloud.synthesizeRequestBody(
+        readAloudSettings({ voice: "Kore", languageCode: "da-DK" }),
+        "Hej.",
+      ).voice,
+    ).toEqual({ languageCode: "da-DK" });
   });
 
   it("only sends the options a voice accepts", () => {
-    const tuned = { speakingRate: 1.25, pitch: -3, stylePrompt: "Excited." };
+    const tuned = { speakingRate: 1.25, pitch: -3 };
     expect(
       ReadAloud.synthesizeRequestBody(
         readAloudSettings({ ...tuned, voice: "en-US-Chirp3-HD-Kore" }),
@@ -137,7 +124,7 @@ describe("synthesizeRequestBody", () => {
 });
 
 describe("voiceListForLanguage", () => {
-  it("keeps the language's voices plus every Gemini voice", () => {
+  it("keeps the language's voices and leaves out Gemini voices", () => {
     const list = ReadAloud.voiceListForLanguage(
       [
         { name: "Kore", languageCodes: ["en-US"], ssmlGender: "FEMALE" },
@@ -148,26 +135,24 @@ describe("voiceListForLanguage", () => {
       "da-DK",
     );
     expect(list.languageCodes).toEqual(["da-DK", "en-US", "fil-PH"]);
-    expect(list.voices).toEqual([
-      { name: "da-DK-Wavenet-F", gender: "female" },
-      { name: "Kore", gender: "female" },
-    ]);
+    expect(list.voices).toEqual([{ name: "da-DK-Wavenet-F", gender: "female" }]);
   });
 });
 
 describe("googleError", () => {
   it("turns a disabled API into a short message with its switch", () => {
     const activationUrl =
-      "https://console.developers.google.com/apis/api/aiplatform.googleapis.com/overview?project=1";
+      "https://console.developers.google.com/apis/api/texttospeech.googleapis.com/overview?project=1";
     const error = ReadAloud.googleError(
       {
         error: {
-          message: "Agent Platform API has not been used in project 1 before or it is disabled…",
+          message:
+            "Cloud Text-to-Speech API has not been used in project 1 before or it is disabled…",
           details: [
             {
               "@type": "type.googleapis.com/google.rpc.ErrorInfo",
               reason: "SERVICE_DISABLED",
-              metadata: { activationUrl, serviceTitle: "Agent Platform API" },
+              metadata: { activationUrl, serviceTitle: "Cloud Text-to-Speech API" },
             },
           ],
         },
@@ -176,7 +161,7 @@ describe("googleError", () => {
     );
     expect(error.actionUrl).toBe(activationUrl);
     expect(error.detail).toBe(
-      "Agent Platform API is turned off in your Google Cloud project, and Gemini voices need it. Enable it, wait a minute, and try again.",
+      "Cloud Text-to-Speech API is turned off in your Google Cloud project. Enable it, wait a minute, and try again.",
     );
   });
 });

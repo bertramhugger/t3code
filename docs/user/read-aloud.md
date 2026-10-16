@@ -23,21 +23,16 @@ Without a key the button does not appear. The mobile app does not read messages 
 
 ## Voices
 
-Once a key is set, **Settings → Integrations → Read aloud** lists every voice Google offers.
+Once a key is set, **Settings → Integrations → Read aloud** lists the voices Google offers.
 Pick a **Language**, then a **Voice** from the searchable list, and press the play button next to
-it to hear a sample. The options below the voice change with the voice you pick:
+it to hear a sample. Chirp 3 HD voices sound the most natural and are listed first.
 
-- **Gemini** voices (such as Kore or Puck) speak any language and follow a **Reading style** you
-  describe in your own words, for example "calm and warm, a little faster than normal". Choose
-  the Gemini model under **Gemini voice model**. Gemini voices also need the
-  [Agent Platform API](https://console.cloud.google.com/apis/library/aiplatform.googleapis.com)
-  enabled in the same Google Cloud project; if your key is restricted to certain APIs, allow that
-  one too.
-- **Chirp 3 HD** and **Chirp HD** voices sound the most natural. They have a **Speed** setting.
-- **Studio**, **Neural2**, **WaveNet**, **Standard**, and the other voices have **Speed** and
-  **Pitch** settings.
+Every voice has a **Speed** setting. Most voices also have **Pitch**; Chirp voices don't support
+it, so the setting is hidden for them. Voices named for a language, such as `da-DK-Wavenet-F`,
+always speak that language.
 
-Voices named for a language, such as `da-DK-Wavenet-F`, always speak that language.
+Google's Gemini voices, which follow a reading style you describe, are not offered: they need a
+signed-in Google account rather than an API key.
 
 ## What gets read
 

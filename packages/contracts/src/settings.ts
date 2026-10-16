@@ -45,12 +45,7 @@ import {
   ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
-import {
-  READ_ALOUD_PITCH,
-  READ_ALOUD_SPEAKING_RATE,
-  READ_ALOUD_STYLE_PROMPT_MAX_LENGTH,
-  ReadAloudGeminiModel,
-} from "./readAloud.ts";
+import { READ_ALOUD_PITCH, READ_ALOUD_SPEAKING_RATE } from "./readAloud.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -1131,15 +1126,12 @@ const ReadAloudPitch = Schema.Number.check(
   Schema.isGreaterThanOrEqualTo(READ_ALOUD_PITCH.min),
   Schema.isLessThanOrEqualTo(READ_ALOUD_PITCH.max),
 );
-const ReadAloudStylePrompt = TrimmedString.check(
-  Schema.isMaxLength(READ_ALOUD_STYLE_PROMPT_MAX_LENGTH),
-);
 
 /** Google Cloud Text-to-Speech key and voice for reading assistant messages aloud. */
 export const ReadAloudSettings = Schema.Struct({
   /** Empty hides the read-aloud button on every client of this environment. */
   googleApiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("")), secretSetting),
-  /** A Google voice name such as `en-US-Neural2-F` or `Kore`. Empty uses Google's default voice. */
+  /** A Google voice name such as `en-US-Chirp3-HD-Kore`. Empty uses Google's default voice. */
   voice: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   /** Language to speak. Voices named for a language (`da-DK-…`) override it. Empty means en-US. */
   languageCode: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -1147,11 +1139,6 @@ export const ReadAloudSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(READ_ALOUD_SPEAKING_RATE.default)),
   ),
   pitch: ReadAloudPitch.pipe(Schema.withDecodingDefault(Effect.succeed(READ_ALOUD_PITCH.default))),
-  /** How a Gemini voice should read, e.g. "calm and warm, a little fast". Ignored by other voices. */
-  stylePrompt: ReadAloudStylePrompt.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
-  geminiModel: ReadAloudGeminiModel.pipe(
-    Schema.withDecodingDefault(Effect.succeed("gemini-2.5-flash-tts" as const)),
-  ),
 });
 export type ReadAloudSettings = typeof ReadAloudSettings.Type;
 
@@ -1607,8 +1594,6 @@ export const ServerSettingsPatch = Schema.Struct({
       languageCode: Schema.optionalKey(TrimmedString),
       speakingRate: Schema.optionalKey(ReadAloudSpeakingRate),
       pitch: Schema.optionalKey(ReadAloudPitch),
-      stylePrompt: Schema.optionalKey(ReadAloudStylePrompt),
-      geminiModel: Schema.optionalKey(ReadAloudGeminiModel),
     }),
   ),
   // Server settings
