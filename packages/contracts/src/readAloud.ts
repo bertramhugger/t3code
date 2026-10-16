@@ -2,6 +2,13 @@ import * as Schema from "effect/Schema";
 
 /** Assistant messages longer than this are refused rather than billed as one huge request. */
 export const READ_ALOUD_MAX_TEXT_LENGTH = 50_000;
+/**
+ * `standard` is the 32 kbps MP3 Google sends for most voices. `high` is the
+ * uncompressed WAV the voice is rendered at, about 12 times larger.
+ */
+export const ReadAloudAudioQuality = Schema.Literals(["standard", "high"]);
+export type ReadAloudAudioQuality = typeof ReadAloudAudioQuality.Type;
+
 export const READ_ALOUD_SPEAKING_RATE = { min: 0.25, max: 4, default: 1 } as const;
 export const READ_ALOUD_PITCH = { min: -20, max: 20, default: 0 } as const;
 
@@ -31,8 +38,9 @@ export const ReadAloudSynthesizeInput = Schema.Struct({
 export type ReadAloudSynthesizeInput = typeof ReadAloudSynthesizeInput.Type;
 
 export const ReadAloudSynthesizeResult = Schema.Struct({
-  /** Base64 MP3. */
+  /** Base64 audio in `mimeType`. */
   audioContent: Schema.String,
+  mimeType: Schema.Literals(["audio/mpeg", "audio/wav"]),
 });
 export type ReadAloudSynthesizeResult = typeof ReadAloudSynthesizeResult.Type;
 

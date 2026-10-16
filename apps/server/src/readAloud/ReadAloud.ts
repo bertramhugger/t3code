@@ -132,7 +132,7 @@ export function synthesizeRequestBody(settings: ReadAloudSettings, text: string)
     input: { text },
     voice: voiceSelection(settings),
     audioConfig: {
-      audioEncoding: "MP3",
+      audioEncoding: settings.audioQuality === "high" ? "LINEAR16" : "MP3",
       ...(options.speakingRate && settings.speakingRate !== READ_ALOUD_SPEAKING_RATE.default
         ? { speakingRate: settings.speakingRate }
         : {}),
@@ -141,6 +141,39 @@ export function synthesizeRequestBody(settings: ReadAloudSettings, text: string)
         : {}),
     },
   };
+}
+
+/**
+ * Joins the WAV files Google returns per chunk into one: the first file's
+ * format, every file's samples, and sizes rewritten to match.
+ */
+export function joinWavChunks(files: readonly Buffer[]): Buffer {
+  let format: Buffer | null = null;
+  const samples: Buffer[] = [];
+  for (const file of files) {
+    // RIFF header (12 bytes), then chunks of: 4-byte id, 4-byte little-endian size, body.
+    let offset = 12;
+    while (offset + 8 <= file.length) {
+      const id = file.toString("ascii", offset, offset + 4);
+      const size = file.readUInt32LE(offset + 4);
+      const body = file.subarray(offset + 8, Math.min(offset + 8 + size, file.length));
+      if (id === "fmt ") format ??= body;
+      if (id === "data") samples.push(body);
+      offset += 8 + size + (size % 2);
+    }
+  }
+  if (format === null) return Buffer.alloc(0);
+  const data = Buffer.concat(samples);
+  const header = Buffer.alloc(20);
+  header.write("RIFF", 0, "ascii");
+  header.writeUInt32LE(4 + 8 + format.length + 8 + data.length, 4);
+  header.write("WAVE", 8, "ascii");
+  header.write("fmt ", 12, "ascii");
+  header.writeUInt32LE(format.length, 16);
+  const dataHeader = Buffer.alloc(8);
+  dataHeader.write("data", 0, "ascii");
+  dataHeader.writeUInt32LE(data.length, 4);
+  return Buffer.concat([header, format, dataHeader, data]);
 }
 
 const SynthesizeResponse = Schema.Struct({ audioContent: Schema.String });
@@ -290,11 +323,20 @@ export const make = Effect.gen(function* () {
     if (chunks.length === 0) {
       return yield* new ReadAloudError({ detail: "This message has nothing to read aloud." });
     }
-    // MP3 frames are self-delimiting, so per-chunk audio joins into one playable stream.
     const audio = yield* Effect.forEach(chunks, (chunk) => synthesizeChunk(settings, chunk), {
       concurrency: 4,
     });
-    return { audioContent: Buffer.concat(audio).toString("base64") };
+    if (settings.audioQuality === "high") {
+      return {
+        audioContent: joinWavChunks(audio).toString("base64"),
+        mimeType: "audio/wav" as const,
+      };
+    }
+    // MP3 frames are self-delimiting, so per-chunk audio joins into one playable stream.
+    return {
+      audioContent: Buffer.concat(audio).toString("base64"),
+      mimeType: "audio/mpeg" as const,
+    };
   });
 
   const listVoices = Effect.fn("ReadAloud.listVoices")(function* (languageCode: string) {

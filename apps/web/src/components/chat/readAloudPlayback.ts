@@ -44,9 +44,9 @@ function subscribe(listener: () => void) {
 }
 
 // A blob URL, not a data URL: the desktop app's CSP allows `blob:` media only.
-function audioUrl(base64: string): string {
+function audioUrl(base64: string, mimeType: string): string {
   const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-  return URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
+  return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
 }
 
 /** What the message identified by `key` is doing right now. */
@@ -95,7 +95,7 @@ export function useToggleReadAloud() {
         });
         return;
       }
-      const url = audioUrl(result.value.audioContent);
+      const url = audioUrl(result.value.audioContent, result.value.mimeType);
       const audio = new Audio(url);
       const isCurrent = () => current?.phase === "playing" && current.audio === audio;
       audio.addEventListener("ended", () => {

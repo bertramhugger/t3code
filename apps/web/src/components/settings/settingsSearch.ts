@@ -797,6 +797,12 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["speak speech tts speaking rate pace fast slow"],
   },
   {
+    id: "read-aloud-audio-quality",
+    title: "Read-aloud audio quality",
+    to: "/settings/integrations",
+    searchTerms: ["speak speech tts sound quality lossless wav mp3 bitrate clearer"],
+  },
+  {
     id: "read-aloud-pitch",
     title: "Read-aloud pitch",
     to: "/settings/integrations",

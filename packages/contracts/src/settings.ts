@@ -45,7 +45,7 @@ import {
   ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
-import { READ_ALOUD_PITCH, READ_ALOUD_SPEAKING_RATE } from "./readAloud.ts";
+import { READ_ALOUD_PITCH, READ_ALOUD_SPEAKING_RATE, ReadAloudAudioQuality } from "./readAloud.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -1139,6 +1139,9 @@ export const ReadAloudSettings = Schema.Struct({
     Schema.withDecodingDefault(Effect.succeed(READ_ALOUD_SPEAKING_RATE.default)),
   ),
   pitch: ReadAloudPitch.pipe(Schema.withDecodingDefault(Effect.succeed(READ_ALOUD_PITCH.default))),
+  audioQuality: ReadAloudAudioQuality.pipe(
+    Schema.withDecodingDefault(Effect.succeed("standard" as const)),
+  ),
 });
 export type ReadAloudSettings = typeof ReadAloudSettings.Type;
 
@@ -1594,6 +1597,7 @@ export const ServerSettingsPatch = Schema.Struct({
       languageCode: Schema.optionalKey(TrimmedString),
       speakingRate: Schema.optionalKey(ReadAloudSpeakingRate),
       pitch: Schema.optionalKey(ReadAloudPitch),
+      audioQuality: Schema.optionalKey(ReadAloudAudioQuality),
     }),
   ),
   // Server settings

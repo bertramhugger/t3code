@@ -120,6 +120,10 @@ describe("synthesizeRequestBody", () => {
         "Hi.",
       ).audioConfig,
     ).toEqual({ audioEncoding: "MP3", speakingRate: 1.25, pitch: -3 });
+    expect(
+      ReadAloud.synthesizeRequestBody(readAloudSettings({ audioQuality: "high" }), "Hi.")
+        .audioConfig.audioEncoding,
+    ).toBe("LINEAR16");
   });
 });
 
@@ -136,6 +140,32 @@ describe("voiceListForLanguage", () => {
     );
     expect(list.languageCodes).toEqual(["da-DK", "en-US", "fil-PH"]);
     expect(list.voices).toEqual([{ name: "da-DK-Wavenet-F", gender: "female" }]);
+  });
+});
+
+describe("joinWavChunks", () => {
+  const wav = (samples: number[]) => {
+    const data = Buffer.from(Int16Array.from(samples).buffer);
+    const file = Buffer.alloc(44 + data.length);
+    file.write("RIFF", 0, "ascii");
+    file.writeUInt32LE(36 + data.length, 4);
+    file.write("WAVEfmt ", 8, "ascii");
+    file.writeUInt32LE(16, 16);
+    file.writeUInt16LE(1, 20); // PCM
+    file.writeUInt16LE(1, 22); // mono
+    file.writeUInt32LE(24_000, 24);
+    file.writeUInt32LE(48_000, 28);
+    file.writeUInt16LE(2, 32);
+    file.writeUInt16LE(16, 34);
+    file.write("data", 36, "ascii");
+    file.writeUInt32LE(data.length, 40);
+    data.copy(file, 44);
+    return file;
+  };
+
+  it("keeps one header and every chunk's samples, in order", () => {
+    const joined = ReadAloud.joinWavChunks([wav([1, 2]), wav([3, 4, 5])]);
+    expect(joined).toEqual(wav([1, 2, 3, 4, 5]));
   });
 });
 
@@ -190,6 +220,7 @@ describe("ReadAloud.synthesize", () => {
       expect(requests).toHaveLength(2);
       expect(requests[0]!.headers["x-goog-api-key"]).toBe("test-key");
       expect(Buffer.from(result.audioContent, "base64").toString()).toBe("chunk0chunk1");
+      expect(result.mimeType).toBe("audio/mpeg");
     }).pipe(
       Effect.provide([
         ServerSettings.layerTest({

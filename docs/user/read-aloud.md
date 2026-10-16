@@ -31,6 +31,11 @@ Every voice has a **Speed** setting. Most voices also have **Pitch**; Chirp voic
 it, so the setting is hidden for them. Voices named for a language, such as `da-DK-Wavenet-F`,
 always speak that language.
 
+**Audio quality** is **Standard** by default: compressed MP3, small enough for any connection. **High**
+sends the uncompressed audio Google renders, which sounds noticeably clearer but makes each message
+about 12 times larger (roughly 1.4 MB for a 30-second message). On a slow remote connection, that
+means a longer wait before playback starts.
+
 Google's Gemini voices, which follow a reading style you describe, are not offered: they need a
 signed-in Google account rather than an API key.
 

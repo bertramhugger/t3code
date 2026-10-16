@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  type ReadAloudAudioQuality,
   READ_ALOUD_PITCH,
   READ_ALOUD_SPEAKING_RATE,
   speechVoiceLanguage,
@@ -22,7 +23,14 @@ import {
   ComboboxTrigger,
 } from "../ui/combobox";
 import { NumberField, NumberFieldGroup, NumberFieldInput } from "../ui/number-field";
-import { SelectButton } from "../ui/select";
+import {
+  Select,
+  SelectButton,
+  SelectItem,
+  SelectPopup,
+  SelectTrigger,
+  SelectValue,
+} from "../ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { SecretInput } from "./SecretInput";
 import { effectiveLanguage, languageLabel, voiceOptions } from "./readAloudVoices";
@@ -33,6 +41,10 @@ import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings"
 
 const PREVIEW_KEY = "settings:read-aloud-preview";
 const PREVIEW_TEXT = "Hi! This is how your agent's messages will sound when they're read aloud.";
+const AUDIO_QUALITY_LABELS: Record<ReadAloudAudioQuality, string> = {
+  standard: "Standard",
+  high: "High",
+};
 // Speed and pitch are exact numbers; grouping or rounding would misreport them.
 const DECIMAL_FORMAT: Intl.NumberFormatOptions = { maximumFractionDigits: 2 };
 
@@ -215,6 +227,41 @@ function VoiceSettings() {
               <NumberFieldInput />
             </NumberFieldGroup>
           </NumberField>
+        }
+      />
+      <SettingsRow
+        {...searchableSetting("read-aloud-audio-quality")}
+        description="Standard is compressed MP3. High is uncompressed and sounds clearer, but each message is about 12 times larger, which matters on slow remote connections."
+        serverScoped
+        settingKeys={["readAloud"]}
+        resetAction={
+          readAloud.audioQuality !== "standard" ? (
+            <SettingResetButton
+              label="audio quality"
+              onClick={() => updateSettings({ readAloud: { audioQuality: "standard" } })}
+            />
+          ) : null
+        }
+        control={
+          <Select
+            value={readAloud.audioQuality}
+            onValueChange={(audioQuality) => {
+              if (audioQuality) updateSettings({ readAloud: { audioQuality } });
+            }}
+          >
+            <SelectTrigger size="sm" aria-label="Audio quality">
+              <SelectValue>
+                {(value: ReadAloudAudioQuality) => AUDIO_QUALITY_LABELS[value]}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {(["standard", "high"] as const).map((quality) => (
+                <SelectItem key={quality} value={quality}>
+                  {AUDIO_QUALITY_LABELS[quality]}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
         }
       />
       {options.pitch ? (
