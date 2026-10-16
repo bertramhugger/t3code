@@ -1,9 +1,10 @@
 /**
- * ReadAloud — turns an assistant message into speech with Google Cloud
- * Text-to-Speech, using the API key stored in `settings.readAloud`.
+ * ReadAloud — turns an assistant message into speech with the service chosen
+ * in `settings.readAloud` (Google Cloud Text-to-Speech, OpenAI, or ElevenLabs),
+ * using that service's stored API key.
  *
- * The key never leaves the server: clients send the message text and get MP3
- * audio back, and ask the server for the voice catalog, so a phone or a remote
+ * Keys never leave the server: clients send the message text and get audio
+ * back, and ask the server for the voice catalog, so a phone or a remote
  * browser can read aloud without holding the credential. Markdown is reduced
  * to plain prose first, then each sentence is synthesized on its own and the
  * pieces are joined into one file, with the time each sentence starts so
@@ -15,12 +16,14 @@ import {
   READ_ALOUD_PITCH,
   READ_ALOUD_SPEAKING_RATE,
   ReadAloudError,
+  type ReadAloudProvider,
   type ReadAloudSettings,
   type ReadAloudSynthesizeResult,
   type ReadAloudVoice,
   type ReadAloudVoiceList,
   speechVoiceLanguage,
   speechVoiceOptions,
+  readAloudApiKey,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -29,6 +32,20 @@ import * as Schema from "effect/Schema";
 import { HttpClient, HttpClientRequest } from "effect/http";
 
 import * as Settings from "../serverSettings.ts";
+import {
+  decodeElevenLabsVoices,
+  ELEVENLABS_API_URL,
+  elevenLabsSpeechRequest,
+  elevenLabsVoiceList,
+  OPENAI_SPEECH_URL,
+  openAiSpeechBody,
+  openAiVoiceList,
+  SERVICE_CONCURRENCY,
+  SERVICE_KEY_LABELS,
+  SERVICE_MAX_SENTENCE_BYTES,
+  SERVICE_NAMES,
+  serviceError,
+} from "./speechServices.ts";
 
 const SYNTHESIZE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const VOICES_URL = "https://texttospeech.googleapis.com/v1/voices";
@@ -41,6 +58,7 @@ export class ReadAloud extends Context.Service<
   {
     readonly synthesize: (text: string) => Effect.Effect<ReadAloudSynthesizeResult, ReadAloudError>;
     readonly listVoices: (
+      provider: ReadAloudProvider,
       languageCode: string,
     ) => Effect.Effect<ReadAloudVoiceList, ReadAloudError>;
   }
@@ -205,6 +223,12 @@ export function mp3Duration(file: Buffer): number {
   return seconds;
 }
 
+/** Drops a leading ID3v2 tag, so joined MP3s carry no tags mid-stream. */
+export function stripId3(file: Buffer): Buffer {
+  if (file.length < 10 || file.toString("ascii", 0, 3) !== "ID3") return file;
+  return file.subarray(10 + ((file[6]! << 21) | (file[7]! << 14) | (file[8]! << 7) | file[9]!));
+}
+
 /** Seconds of audio in a PCM WAV. */
 export function wavDuration(file: Buffer): number {
   let byteRate = 0;
@@ -307,97 +331,158 @@ export const make = Effect.gen(function* () {
   const client = yield* HttpClient.HttpClient;
   const settingsService = yield* Settings.ServerSettingsService;
 
-  const readSettings = settingsService.getSettings.pipe(
-    Effect.mapError(() => new ReadAloudError({ detail: "Couldn't read the server settings." })),
-    Effect.flatMap(({ readAloud }) =>
-      readAloud.googleApiKey.length === 0
-        ? Effect.fail(
-            new ReadAloudError({
-              detail:
-                "Add a Google Cloud API key under Settings → Integrations to read messages aloud.",
-            }),
-          )
-        : Effect.succeed(readAloud),
-    ),
-  );
+  /** Settings, provided the service in use (or `provider`) has a key. */
+  const readSettings = (provider?: ReadAloudProvider) =>
+    settingsService.getSettings.pipe(
+      Effect.mapError(() => new ReadAloudError({ detail: "Couldn't read the server settings." })),
+      Effect.flatMap(({ readAloud }) => {
+        const service = provider ?? readAloud.provider;
+        return readAloudApiKey({ ...readAloud, provider: service }).length === 0
+          ? Effect.fail(
+              new ReadAloudError({
+                detail: `Add ${SERVICE_KEY_LABELS[service]} under Settings → Integrations to read messages aloud.`,
+              }),
+            )
+          : Effect.succeed(readAloud);
+      }),
+    );
 
-  /** Sends a request with the key and returns the JSON body, or Google's own error message. */
-  const callGoogle = Effect.fn("ReadAloud.callGoogle")(function* (
-    apiKey: string,
+  /** Sends a request and returns the response, or the service's own reason it failed. */
+  const send = Effect.fn("ReadAloud.send")(function* (
+    provider: ReadAloudProvider,
     request: HttpClientRequest.HttpClientRequest,
   ) {
-    const response = yield* client
-      .execute(request.pipe(HttpClientRequest.setHeader("X-Goog-Api-Key", apiKey)))
-      .pipe(
-        Effect.timeout("30 seconds"),
-        Effect.mapError(
-          () => new ReadAloudError({ detail: "Couldn't reach Google Text-to-Speech." }),
-        ),
-      );
-    const body = yield* response.json.pipe(
+    const response = yield* client.execute(request).pipe(
+      Effect.timeout("60 seconds"),
       Effect.mapError(
-        () => new ReadAloudError({ detail: "Google Text-to-Speech sent an unreadable reply." }),
+        () => new ReadAloudError({ detail: `Couldn't reach ${SERVICE_NAMES[provider]}.` }),
       ),
     );
-    if (response.status < 200 || response.status >= 300) {
-      return yield* googleError(body, response.status);
-    }
-    return body;
+    if (response.status >= 200 && response.status < 300) return response;
+    const body = yield* response.json.pipe(Effect.orElseSucceed(() => null));
+    return yield* provider === "google"
+      ? googleError(body, response.status)
+      : serviceError(provider, body, response.status);
   });
 
-  const synthesizeChunk = Effect.fn("ReadAloud.synthesizeChunk")(function* (
+  const unreadable = (provider: ReadAloudProvider, what: string) => () =>
+    new ReadAloudError({ detail: `${SERVICE_NAMES[provider]} sent ${what}.` });
+
+  /** Audio for one sentence; the neighbours give ElevenLabs its intonation. */
+  const synthesizeSentence = Effect.fn("ReadAloud.synthesizeSentence")(function* (
     settings: ReadAloudSettings,
-    text: string,
+    sentences: readonly string[],
+    index: number,
   ) {
-    const body = yield* callGoogle(
-      settings.googleApiKey,
+    const text = sentences[index]!;
+    if (settings.provider === "openai") {
+      const response = yield* send(
+        "openai",
+        HttpClientRequest.post(OPENAI_SPEECH_URL).pipe(
+          HttpClientRequest.bearerToken(settings.openaiApiKey),
+          HttpClientRequest.bodyJsonUnsafe(openAiSpeechBody(settings, text)),
+        ),
+      );
+      const audio = yield* response.arrayBuffer.pipe(
+        Effect.mapError(unreadable("openai", "no audio")),
+      );
+      return Buffer.from(audio);
+    }
+    if (settings.provider === "elevenlabs") {
+      const { url, body } = elevenLabsSpeechRequest(settings, sentences, index);
+      const response = yield* send(
+        "elevenlabs",
+        HttpClientRequest.post(url).pipe(
+          HttpClientRequest.setHeader("xi-api-key", settings.elevenlabsApiKey),
+          HttpClientRequest.bodyJsonUnsafe(body),
+        ),
+      );
+      const audio = yield* response.arrayBuffer.pipe(
+        Effect.mapError(unreadable("elevenlabs", "no audio")),
+      );
+      return Buffer.from(audio);
+    }
+    const response = yield* send(
+      "google",
       HttpClientRequest.post(SYNTHESIZE_URL).pipe(
+        HttpClientRequest.setHeader("X-Goog-Api-Key", settings.googleApiKey),
         HttpClientRequest.bodyJsonUnsafe(synthesizeRequestBody(settings, text)),
       ),
     );
-    const decoded = yield* decodeSynthesizeResponse(body).pipe(
-      Effect.mapError(() => new ReadAloudError({ detail: "Google Text-to-Speech sent no audio." })),
+    const decoded = yield* response.json.pipe(
+      Effect.flatMap(decodeSynthesizeResponse),
+      Effect.mapError(unreadable("google", "no audio")),
     );
     return Buffer.from(decoded.audioContent, "base64");
   });
 
   const synthesize = Effect.fn("ReadAloud.synthesize")(function* (text: string) {
-    const settings = yield* readSettings;
-    const sentences = speechSentences(speechTextFromMarkdown(text));
+    const settings = yield* readSettings();
+    const { provider } = settings;
+    const sentences = speechSentences(
+      speechTextFromMarkdown(text),
+      SERVICE_MAX_SENTENCE_BYTES[provider],
+    );
     if (sentences.length === 0) {
       return yield* new ReadAloudError({ detail: "This message has nothing to read aloud." });
     }
     // One sentence per request: parallel requests finish sooner than one long one, and
     // each piece's length says when its sentence starts, for highlighting.
     const audio = yield* Effect.forEach(
-      sentences,
-      (sentence) => synthesizeChunk(settings, sentence),
-      { concurrency: 8 },
+      sentences.map((_, index) => index),
+      (index) => synthesizeSentence(settings, sentences, index),
+      { concurrency: SERVICE_CONCURRENCY[provider] },
     );
-    const wav = settings.audioQuality === "high";
+    // ElevenLabs always sends MP3; the others send WAV at high quality.
+    const wav = provider !== "elevenlabs" && settings.audioQuality === "high";
+    const pieces = wav ? audio : audio.map(stripId3);
     const duration = wav ? wavDuration : mp3Duration;
     let start = 0;
     const segments = sentences.map((sentence, index) => {
       const segment = { text: sentence, start };
-      start += duration(audio[index]!);
+      start += duration(pieces[index]!);
       return segment;
     });
     return {
       // MP3 frames are self-delimiting, so per-sentence MP3s join into one playable stream.
-      audioContent: (wav ? joinWavChunks(audio) : Buffer.concat(audio)).toString("base64"),
+      audioContent: (wav ? joinWavChunks(pieces) : Buffer.concat(pieces)).toString("base64"),
       mimeType: wav ? ("audio/wav" as const) : ("audio/mpeg" as const),
       segments,
     };
   });
 
-  const listVoices = Effect.fn("ReadAloud.listVoices")(function* (languageCode: string) {
-    const settings = yield* readSettings;
-    const body = yield* callGoogle(settings.googleApiKey, HttpClientRequest.get(VOICES_URL));
-    const decoded = yield* decodeVoicesResponse(body).pipe(
-      Effect.mapError(
-        () =>
-          new ReadAloudError({ detail: "Google Text-to-Speech sent an unreadable voice list." }),
+  const listVoices = Effect.fn("ReadAloud.listVoices")(function* (
+    provider: ReadAloudProvider,
+    languageCode: string,
+  ) {
+    const settings = yield* readSettings(provider);
+    if (provider === "openai") {
+      return { languageCodes: [], voices: openAiVoiceList(settings.openaiModel) };
+    }
+    if (provider === "elevenlabs") {
+      const response = yield* send(
+        "elevenlabs",
+        HttpClientRequest.get(`${ELEVENLABS_API_URL}/v2/voices?page_size=100`).pipe(
+          HttpClientRequest.setHeader("xi-api-key", settings.elevenlabsApiKey),
+        ),
+      );
+      const body = yield* response.json.pipe(
+        Effect.mapError(unreadable("elevenlabs", "an unreadable voice list")),
+      );
+      const decoded = decodeElevenLabsVoices(body);
+      if (decoded._tag === "None")
+        return yield* unreadable("elevenlabs", "an unreadable voice list")();
+      return { languageCodes: [], voices: elevenLabsVoiceList(decoded.value.voices) };
+    }
+    const response = yield* send(
+      "google",
+      HttpClientRequest.get(VOICES_URL).pipe(
+        HttpClientRequest.setHeader("X-Goog-Api-Key", settings.googleApiKey),
       ),
+    );
+    const decoded = yield* response.json.pipe(
+      Effect.flatMap(decodeVoicesResponse),
+      Effect.mapError(unreadable("google", "an unreadable voice list")),
     );
     return voiceListForLanguage(decoded.voices, languageCode || DEFAULT_LANGUAGE_CODE);
   });

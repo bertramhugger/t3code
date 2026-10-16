@@ -86,6 +86,7 @@ import {
   RuntimeMode,
   TerminalOpenInput,
   type WorktreeSetupSnapshot,
+  readAloudApiKey,
 } from "@t3tools/contracts";
 import { type EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
 import { deriveThreadTitleSeed } from "@t3tools/client-runtime/operations";
@@ -1892,7 +1893,7 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
-  const readAloudEnabled = settings.readAloud.googleApiKey.length > 0;
+  const readAloudEnabled = readAloudApiKey(settings.readAloud).length > 0;
   const navigate = useNavigate();
   const citationLocation = useLocation({
     select: (location) => ({
@@ -7000,7 +7001,7 @@ export default function ChatView(props: ChatViewProps) {
       toastManager.add({
         type: "info",
         title: "Read aloud isn't set up",
-        description: "Add a Google Cloud API key under Settings → Integrations.",
+        description: "Choose a voice service and add its API key under Settings → Integrations.",
       });
       return;
     }

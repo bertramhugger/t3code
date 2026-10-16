@@ -1535,7 +1535,12 @@ it.layer(NodeServices.layer)("server settings", (it) => {
               enabled: true,
             },
           },
-          readAloud: { googleApiKey: "google-tts-secret", voice: "en-US-Neural2-F" },
+          readAloud: {
+            googleApiKey: "google-tts-secret",
+            voice: "en-US-Neural2-F",
+            openaiApiKey: "openai-tts-secret",
+            elevenlabsApiKey: "elevenlabs-tts-secret",
+          },
         });
         const values = [
           "config-secret",
@@ -1545,6 +1550,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           "gitcafe-secret",
           "quota-secret",
           "google-tts-secret",
+          "openai-tts-secret",
+          "elevenlabs-tts-secret",
         ];
         const client = ServerSettingsModule.redactServerSettingsForClient(saved);
         const disk = yield* fs.readFileString(config.settingsPath);
@@ -1557,6 +1564,8 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         assert.include(JSON.stringify(client), "me@example.test");
         assert.deepInclude(client.readAloud, {
           googleApiKey: "••••••",
+          openaiApiKey: "••••••",
+          elevenlabsApiKey: "••••••",
           voice: "en-US-Neural2-F",
         });
         const echoed = yield* service.updateSettings({

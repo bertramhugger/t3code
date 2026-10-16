@@ -773,10 +773,46 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["browser preview clicks buttons drag overlay capture"],
   },
   {
+    id: "read-aloud-provider",
+    title: "Read-aloud voice service",
+    to: "/settings/integrations",
+    searchTerms: [
+      "read aloud speak speech voice text to speech tts listen audio provider google openai elevenlabs",
+    ],
+  },
+  {
     id: "read-aloud-google-api-key",
     title: "Google Cloud API key",
     to: "/settings/integrations",
     searchTerms: ["read aloud speak speech voice text to speech tts listen audio google"],
+  },
+  {
+    id: "read-aloud-openai-api-key",
+    title: "OpenAI API key",
+    to: "/settings/integrations",
+    searchTerms: ["read aloud speak speech voice text to speech tts listen audio openai gpt"],
+  },
+  {
+    id: "read-aloud-elevenlabs-api-key",
+    title: "ElevenLabs API key",
+    to: "/settings/integrations",
+    searchTerms: [
+      "read aloud speak speech voice text to speech tts listen audio elevenlabs eleven",
+    ],
+  },
+  {
+    id: "read-aloud-model",
+    title: "Read-aloud speech model",
+    to: "/settings/integrations",
+    searchTerms: [
+      "read aloud speak speech tts model gpt-4o mini tts-1 eleven multilingual flash v3",
+    ],
+  },
+  {
+    id: "read-aloud-style",
+    title: "Reading style",
+    to: "/settings/integrations",
+    searchTerms: ["read aloud speak speech tts openai instructions describe tone emotion style"],
   },
   {
     id: "read-aloud-language",

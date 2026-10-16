@@ -290,7 +290,7 @@ describe("ReadAloud.synthesize", () => {
     const requests: HttpClientRequest.HttpClientRequest[] = [];
     return Effect.gen(function* () {
       const readAloud = yield* ReadAloud.make;
-      const list = yield* readAloud.listVoices("en-US");
+      const list = yield* readAloud.listVoices("google", "en-US");
       expect(requests[0]!.url).toBe("https://texttospeech.googleapis.com/v1/voices");
       expect(requests[0]!.headers["x-goog-api-key"]).toBe("test-key");
       expect(list.voices).toEqual([{ name: "en-US-Neural2-F", gender: "female" }]);
@@ -312,4 +312,49 @@ describe("ReadAloud.synthesize", () => {
       ]),
     );
   });
+
+  it.effect("reads with OpenAI, joining the MP3 it sends per sentence", () => {
+    const requests: HttpClientRequest.HttpClientRequest[] = [];
+    // One MPEG-2 Layer III frame: 96 bytes, 24 ms.
+    const frame = Buffer.concat([Buffer.from([0xff, 0xf3, 0x44, 0xc4]), Buffer.alloc(92)]);
+    return Effect.gen(function* () {
+      const readAloud = yield* ReadAloud.make;
+      const result = yield* readAloud.synthesize("First. Second.");
+      expect(requests.map((request) => request.url)).toEqual([
+        "https://api.openai.com/v1/audio/speech",
+        "https://api.openai.com/v1/audio/speech",
+      ]);
+      expect(requests[0]!.headers.authorization).toBe("Bearer sk-test");
+      expect(result.mimeType).toBe("audio/mpeg");
+      expect(result.segments).toEqual([
+        { text: "First.", start: 0 },
+        { text: "Second.", start: expect.closeTo(0.024, 6) },
+      ]);
+    }).pipe(
+      Effect.provide([
+        ServerSettings.layerTest({ readAloud: { provider: "openai", openaiApiKey: "sk-test" } }),
+        googleClient(() => new Response(frame), requests),
+      ]),
+    );
+  });
+
+  it.effect("asks for the chosen service's key", () =>
+    Effect.gen(function* () {
+      const readAloud = yield* ReadAloud.make;
+      const error = yield* Effect.flip(readAloud.synthesize("Hello."));
+      expect(error.detail).toBe(
+        "Add an ElevenLabs API key under Settings → Integrations to read messages aloud.",
+      );
+    }).pipe(
+      Effect.provide([
+        ServerSettings.layerTest({
+          readAloud: { provider: "elevenlabs", googleApiKey: "google-key" },
+        }),
+        Layer.succeed(
+          HttpClient.HttpClient,
+          HttpClient.make(() => Effect.die("Unexpected network request")),
+        ),
+      ]),
+    ),
+  );
 });

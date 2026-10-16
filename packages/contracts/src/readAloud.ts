@@ -2,6 +2,53 @@ import * as Schema from "effect/Schema";
 
 /** Assistant messages longer than this are refused rather than billed as one huge request. */
 export const READ_ALOUD_MAX_TEXT_LENGTH = 50_000;
+/** The speech service that reads messages aloud. Each has its own API key. */
+export const ReadAloudProvider = Schema.Literals(["google", "openai", "elevenlabs"]);
+export type ReadAloudProvider = typeof ReadAloudProvider.Type;
+
+export const READ_ALOUD_OPENAI_MODELS = ["gpt-4o-mini-tts", "tts-1-hd", "tts-1"] as const;
+export const ReadAloudOpenAiModel = Schema.Literals(READ_ALOUD_OPENAI_MODELS);
+export type ReadAloudOpenAiModel = typeof ReadAloudOpenAiModel.Type;
+
+/** OpenAI has no voice list endpoint. The tts-1 models offer only the first nine. */
+export const READ_ALOUD_OPENAI_VOICES = [
+  "alloy",
+  "ash",
+  "coral",
+  "echo",
+  "fable",
+  "nova",
+  "onyx",
+  "sage",
+  "shimmer",
+  "ballad",
+  "verse",
+  "marin",
+  "cedar",
+] as const;
+export const READ_ALOUD_OPENAI_TTS1_VOICE_COUNT = 9;
+
+export const READ_ALOUD_ELEVENLABS_MODELS = [
+  "eleven_multilingual_v2",
+  "eleven_v3",
+  "eleven_flash_v2_5",
+  "eleven_turbo_v2_5",
+] as const;
+export const ReadAloudElevenLabsModel = Schema.Literals(READ_ALOUD_ELEVENLABS_MODELS);
+export type ReadAloudElevenLabsModel = typeof ReadAloudElevenLabsModel.Type;
+/** ElevenLabs' "George", used until a voice is picked; every account has it. */
+export const READ_ALOUD_ELEVENLABS_DEFAULT_VOICE = "JBFqnCBsd6RMkjVDRZzb";
+
+/** How OpenAI's gpt-4o-mini-tts should read, e.g. "calm and warm". */
+export const READ_ALOUD_STYLE_PROMPT_MAX_LENGTH = 1_000;
+
+/** Speed each service accepts; the shared setting is clamped to it. */
+export const READ_ALOUD_SPEED_RANGE: Record<ReadAloudProvider, { min: number; max: number }> = {
+  google: { min: 0.25, max: 4 },
+  openai: { min: 0.25, max: 4 },
+  elevenlabs: { min: 0.7, max: 1.2 },
+};
+
 /**
  * `standard` is the 32 kbps MP3 Google sends for most voices. `high` is the
  * uncompressed WAV the voice is rendered at, about 12 times larger.
@@ -57,18 +104,24 @@ export type ReadAloudSynthesizeResult = typeof ReadAloudSynthesizeResult.Type;
 export const ReadAloudVoiceGender = Schema.Literals(["female", "male", "neutral"]);
 
 export const ReadAloudVoice = Schema.Struct({
+  /** What the setting stores: a Google voice name or an ElevenLabs voice ID. */
   name: Schema.String,
   gender: Schema.NullOr(ReadAloudVoiceGender),
+  /** Display name when `name` is an ID. */
+  label: Schema.optional(Schema.String),
+  /** Accent, style, or other notes the service gives. */
+  description: Schema.optional(Schema.String),
 });
 export type ReadAloudVoice = typeof ReadAloudVoice.Type;
 
 export const ReadAloudListVoicesInput = Schema.Struct({
-  /** BCP-47 code such as `da-DK`; only that language's voices come back. */
+  provider: ReadAloudProvider,
+  /** BCP-47 code such as `da-DK`; Google returns only that language's voices. */
   languageCode: Schema.String,
 });
 
 export const ReadAloudVoiceList = Schema.Struct({
-  /** Every language Google offers voices for, so the client can switch. */
+  /** Every language Google offers voices for, so the client can switch. Empty for multilingual services. */
   languageCodes: Schema.Array(Schema.String),
   /** Voices for the requested language. */
   voices: Schema.Array(ReadAloudVoice),

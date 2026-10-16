@@ -45,7 +45,15 @@ import {
   ProviderDriverKind,
 } from "./providerInstance.ts";
 import { PullRequestMergeMethod } from "./pullRequest.ts";
-import { READ_ALOUD_PITCH, READ_ALOUD_SPEAKING_RATE, ReadAloudAudioQuality } from "./readAloud.ts";
+import {
+  READ_ALOUD_PITCH,
+  READ_ALOUD_SPEAKING_RATE,
+  READ_ALOUD_STYLE_PROMPT_MAX_LENGTH,
+  ReadAloudAudioQuality,
+  ReadAloudElevenLabsModel,
+  ReadAloudOpenAiModel,
+  ReadAloudProvider,
+} from "./readAloud.ts";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -1127,9 +1135,17 @@ const ReadAloudPitch = Schema.Number.check(
   Schema.isLessThanOrEqualTo(READ_ALOUD_PITCH.max),
 );
 
-/** Google Cloud Text-to-Speech key and voice for reading assistant messages aloud. */
+const ReadAloudStylePrompt = TrimmedString.check(
+  Schema.isMaxLength(READ_ALOUD_STYLE_PROMPT_MAX_LENGTH),
+);
+
+/**
+ * The speech service, its key, and its voice for reading assistant messages
+ * aloud. Each service keeps its own fields, so switching back loses nothing.
+ */
 export const ReadAloudSettings = Schema.Struct({
-  /** Empty hides the read-aloud button on every client of this environment. */
+  provider: ReadAloudProvider.pipe(Schema.withDecodingDefault(Effect.succeed("google" as const))),
+  /** The chosen service's key being empty hides the read-aloud button on every client. */
   googleApiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("")), secretSetting),
   /** A Google voice name such as `en-US-Chirp3-HD-Kore`. Empty uses Google's default voice. */
   voice: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
@@ -1142,8 +1158,31 @@ export const ReadAloudSettings = Schema.Struct({
   audioQuality: ReadAloudAudioQuality.pipe(
     Schema.withDecodingDefault(Effect.succeed("standard" as const)),
   ),
+  openaiApiKey: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("")), secretSetting),
+  openaiModel: ReadAloudOpenAiModel.pipe(
+    Schema.withDecodingDefault(Effect.succeed("gpt-4o-mini-tts" as const)),
+  ),
+  openaiVoice: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed("coral"))),
+  /** How gpt-4o-mini-tts should read: tone, pace, character. Ignored by the tts-1 models. */
+  openaiInstructions: ReadAloudStylePrompt.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  elevenlabsApiKey: TrimmedString.pipe(
+    Schema.withDecodingDefault(Effect.succeed("")),
+    secretSetting,
+  ),
+  elevenlabsModel: ReadAloudElevenLabsModel.pipe(
+    Schema.withDecodingDefault(Effect.succeed("eleven_multilingual_v2" as const)),
+  ),
+  /** An ElevenLabs voice ID. Empty uses George, a voice every account has. */
+  elevenlabsVoiceId: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
 });
 export type ReadAloudSettings = typeof ReadAloudSettings.Type;
+
+/** The chosen service's key; empty when read aloud is not set up. */
+export function readAloudApiKey(settings: ReadAloudSettings): string {
+  if (settings.provider === "openai") return settings.openaiApiKey;
+  if (settings.provider === "elevenlabs") return settings.elevenlabsApiKey;
+  return settings.googleApiKey;
+}
 
 export const ServerSettings = Schema.Struct({
   // Null means no client has migrated this preference yet; an empty value is
@@ -1598,6 +1637,14 @@ export const ServerSettingsPatch = Schema.Struct({
       speakingRate: Schema.optionalKey(ReadAloudSpeakingRate),
       pitch: Schema.optionalKey(ReadAloudPitch),
       audioQuality: Schema.optionalKey(ReadAloudAudioQuality),
+      provider: Schema.optionalKey(ReadAloudProvider),
+      openaiApiKey: Schema.optionalKey(TrimmedString),
+      openaiModel: Schema.optionalKey(ReadAloudOpenAiModel),
+      openaiVoice: Schema.optionalKey(TrimmedString),
+      openaiInstructions: Schema.optionalKey(ReadAloudStylePrompt),
+      elevenlabsApiKey: Schema.optionalKey(TrimmedString),
+      elevenlabsModel: Schema.optionalKey(ReadAloudElevenLabsModel),
+      elevenlabsVoiceId: Schema.optionalKey(TrimmedString),
     }),
   ),
   // Server settings
