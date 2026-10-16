@@ -308,7 +308,11 @@ describe("scoped settings writes", () => {
 
     it("accepts a replaced secret that comes back redacted", async () => {
       const keyed = [
-        environment("Laptop", { settings: { readAloud: { googleApiKey: "••••••", voice: "" } } }),
+        environment("Laptop", {
+          settings: {
+            readAloud: { ...DEFAULT_SERVER_SETTINGS.readAloud, googleApiKey: "••••••" },
+          },
+        }),
       ];
       const result = await persistScopedSettingsPatch(
         planScopedSettingsPatch(resolveSettingsScope({}, [], keyed), keyed, {
@@ -316,7 +320,10 @@ describe("scoped settings writes", () => {
         }),
         vi.fn(async () => ({
           _tag: "Success" as const,
-          value: { ...DEFAULT_SERVER_SETTINGS, readAloud: { googleApiKey: "••••••", voice: "" } },
+          value: {
+            ...DEFAULT_SERVER_SETTINGS,
+            readAloud: { ...DEFAULT_SERVER_SETTINGS.readAloud, googleApiKey: "••••••" },
+          },
         })),
         vi.fn(),
       );

@@ -68,7 +68,9 @@ import {
 import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   ReadAloudError,
+  ReadAloudListVoicesInput,
   ReadAloudSynthesizeInput,
+  ReadAloudVoiceList,
   ReadAloudSynthesizeResult,
 } from "./readAloud.ts";
 import {
@@ -489,6 +491,7 @@ export const WS_METHODS = {
   serverRunStorageCleanup: "server.runStorageCleanup",
   serverGetStorageCleanupReport: "server.getStorageCleanupReport",
   serverSynthesizeSpeech: "server.synthesizeSpeech",
+  serverListSpeechVoices: "server.listSpeechVoices",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
@@ -763,6 +766,11 @@ const WsServerRunStorageCleanupRpc = Rpc.make(WS_METHODS.serverRunStorageCleanup
 const WsServerSynthesizeSpeechRpc = Rpc.make(WS_METHODS.serverSynthesizeSpeech, {
   payload: ReadAloudSynthesizeInput,
   success: ReadAloudSynthesizeResult,
+  error: Schema.Union([ReadAloudError, EnvironmentAuthorizationError]),
+});
+const WsServerListSpeechVoicesRpc = Rpc.make(WS_METHODS.serverListSpeechVoices, {
+  payload: ReadAloudListVoicesInput,
+  success: ReadAloudVoiceList,
   error: Schema.Union([ReadAloudError, EnvironmentAuthorizationError]),
 });
 const WsServerGetStorageCleanupReportRpc = Rpc.make(WS_METHODS.serverGetStorageCleanupReport, {
@@ -1914,6 +1922,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerRunStorageCleanupRpc,
   WsServerGetStorageCleanupReportRpc,
   WsServerSynthesizeSpeechRpc,
+  WsServerListSpeechVoicesRpc,
   WsServerGetSettingsRpc,
   WsServerUpdateSettingsRpc,
   WsServerDiscoverSourceControlRpc,

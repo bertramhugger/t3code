@@ -1555,7 +1555,10 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         }
         assert.include(JSON.stringify(client), "https://example.test");
         assert.include(JSON.stringify(client), "me@example.test");
-        assert.deepEqual(client.readAloud, { googleApiKey: "••••••", voice: "en-US-Neural2-F" });
+        assert.deepInclude(client.readAloud, {
+          googleApiKey: "••••••",
+          voice: "en-US-Neural2-F",
+        });
         const echoed = yield* service.updateSettings({
           providerInstances: client.providerInstances,
           sourceControlHosts: client.sourceControlHosts,

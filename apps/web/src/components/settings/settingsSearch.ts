@@ -779,10 +779,40 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["read aloud speak speech voice text to speech tts listen audio google"],
   },
   {
+    id: "read-aloud-language",
+    title: "Read-aloud language",
+    to: "/settings/integrations",
+    searchTerms: ["speak speech tts language accent locale google"],
+  },
+  {
     id: "read-aloud-voice",
     title: "Read-aloud voice",
     to: "/settings/integrations",
-    searchTerms: ["speak speech tts language accent google voice name"],
+    searchTerms: ["speak speech tts accent google voice gemini chirp preview sample"],
+  },
+  {
+    id: "read-aloud-speed",
+    title: "Read-aloud speed",
+    to: "/settings/integrations",
+    searchTerms: ["speak speech tts speaking rate pace fast slow"],
+  },
+  {
+    id: "read-aloud-pitch",
+    title: "Read-aloud pitch",
+    to: "/settings/integrations",
+    searchTerms: ["speak speech tts voice pitch tone higher lower"],
+  },
+  {
+    id: "read-aloud-gemini-model",
+    title: "Gemini voice model",
+    to: "/settings/integrations",
+    searchTerms: ["read aloud speak speech tts gemini flash pro model"],
+  },
+  {
+    id: "read-aloud-style",
+    title: "Reading style",
+    to: "/settings/integrations",
+    searchTerms: ["read aloud speak speech tts gemini prompt describe tone emotion style"],
   },
   {
     id: "browser-link-target",

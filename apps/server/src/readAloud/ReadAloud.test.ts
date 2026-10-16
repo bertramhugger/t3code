@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import { ReadAloudSettings } from "@t3tools/contracts";
 import { HttpClient, type HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import * as ServerSettings from "../serverSettings.ts";
@@ -70,13 +72,86 @@ describe("splitSpeechChunks", () => {
   });
 });
 
-describe("voiceSelection", () => {
-  it("derives the language from the voice name", () => {
-    expect(ReadAloud.voiceSelection("")).toEqual({ languageCode: "en-US" });
-    expect(ReadAloud.voiceSelection("da-DK-Wavenet-A")).toEqual({
-      languageCode: "da-DK",
-      name: "da-DK-Wavenet-A",
+const DEFAULT_READ_ALOUD = Schema.decodeSync(ReadAloudSettings)({});
+const readAloudSettings = (overrides: Partial<ReadAloudSettings> = {}) => ({
+  ...DEFAULT_READ_ALOUD,
+  ...overrides,
+});
+
+describe("synthesizeRequestBody", () => {
+  it("speaks a named voice in its own language", () => {
+    expect(
+      ReadAloud.synthesizeRequestBody(
+        readAloudSettings({ voice: "da-DK-Wavenet-F", languageCode: "en-US" }),
+        "Hej.",
+      ).voice,
+    ).toEqual({ languageCode: "da-DK", name: "da-DK-Wavenet-F" });
+    expect(ReadAloud.synthesizeRequestBody(readAloudSettings(), "Hi.").voice).toEqual({
+      languageCode: "en-US",
     });
+  });
+
+  it("sends a Gemini voice its model, chosen language, and style prompt", () => {
+    const body = ReadAloud.synthesizeRequestBody(
+      readAloudSettings({
+        voice: "Kore",
+        languageCode: "da-DK",
+        stylePrompt: "Calm and warm.",
+        geminiModel: "gemini-2.5-pro-tts",
+        speakingRate: 1.5,
+        pitch: 4,
+      }),
+      "Hej.",
+    );
+    expect(body.input).toEqual({ text: "Hej.", prompt: "Calm and warm." });
+    expect(body.voice).toEqual({
+      languageCode: "da-DK",
+      name: "Kore",
+      modelName: "gemini-2.5-pro-tts",
+    });
+    // Gemini voices take pace from the prompt; Google rejects pitch.
+    expect(body.audioConfig).toEqual({ audioEncoding: "MP3" });
+  });
+
+  it("only sends the options a voice accepts", () => {
+    const tuned = { speakingRate: 1.25, pitch: -3, stylePrompt: "Excited." };
+    expect(
+      ReadAloud.synthesizeRequestBody(
+        readAloudSettings({ ...tuned, voice: "en-US-Chirp3-HD-Kore" }),
+        "Hi.",
+      ),
+    ).toMatchObject({ input: { text: "Hi." }, audioConfig: { speakingRate: 1.25 } });
+    expect(
+      ReadAloud.synthesizeRequestBody(
+        readAloudSettings({ ...tuned, voice: "en-US-Chirp3-HD-Kore" }),
+        "Hi.",
+      ).audioConfig,
+    ).not.toHaveProperty("pitch");
+    expect(
+      ReadAloud.synthesizeRequestBody(
+        readAloudSettings({ ...tuned, voice: "en-US-Neural2-F" }),
+        "Hi.",
+      ).audioConfig,
+    ).toEqual({ audioEncoding: "MP3", speakingRate: 1.25, pitch: -3 });
+  });
+});
+
+describe("voiceListForLanguage", () => {
+  it("keeps the language's voices plus every Gemini voice", () => {
+    const list = ReadAloud.voiceListForLanguage(
+      [
+        { name: "Kore", languageCodes: ["en-US"], ssmlGender: "FEMALE" },
+        { name: "da-DK-Wavenet-F", languageCodes: ["da-DK"], ssmlGender: "FEMALE" },
+        { name: "en-US-Neural2-D", languageCodes: ["en-US"], ssmlGender: "MALE" },
+        { name: "fil-ph-Neural2-A", languageCodes: ["fil-PH"] },
+      ],
+      "da-DK",
+    );
+    expect(list.languageCodes).toEqual(["da-DK", "en-US", "fil-PH"]);
+    expect(list.voices).toEqual([
+      { name: "da-DK-Wavenet-F", gender: "female" },
+      { name: "Kore", gender: "female" },
+    ]);
   });
 });
 
@@ -153,4 +228,31 @@ describe("ReadAloud.synthesize", () => {
       ]),
     ),
   );
+
+  it.effect("lists voices with the stored key", () => {
+    const requests: HttpClientRequest.HttpClientRequest[] = [];
+    return Effect.gen(function* () {
+      const readAloud = yield* ReadAloud.make;
+      const list = yield* readAloud.listVoices("en-US");
+      expect(requests[0]!.url).toBe("https://texttospeech.googleapis.com/v1/voices");
+      expect(requests[0]!.headers["x-goog-api-key"]).toBe("test-key");
+      expect(list.voices).toEqual([{ name: "en-US-Neural2-F", gender: "female" }]);
+    }).pipe(
+      Effect.provide([
+        ServerSettings.layerTest({ readAloud: { googleApiKey: "test-key" } }),
+        googleClient(
+          () =>
+            new Response(
+              JSON.stringify({
+                voices: [
+                  { name: "en-US-Neural2-F", languageCodes: ["en-US"], ssmlGender: "FEMALE" },
+                  { name: "da-DK-Wavenet-F", languageCodes: ["da-DK"], ssmlGender: "FEMALE" },
+                ],
+              }),
+            ),
+          requests,
+        ),
+      ]),
+    );
+  });
 });

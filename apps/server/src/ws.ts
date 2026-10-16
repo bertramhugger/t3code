@@ -2417,6 +2417,8 @@ const layerWsRpc = (
         [WS_METHODS.serverRunStorageCleanup]: () => storageCleanup.runNow,
         [WS_METHODS.serverGetStorageCleanupReport]: () => storageCleanup.reports,
         [WS_METHODS.serverSynthesizeSpeech]: ({ text }) => readAloud.synthesize(text),
+        [WS_METHODS.serverListSpeechVoices]: ({ languageCode }) =>
+          readAloud.listVoices(languageCode),
         [WS_METHODS.serverGetSettings]: (_input) =>
           serverSettings.getSettings.pipe(Effect.map(ServerSettings.redactServerSettingsForClient)),
         [WS_METHODS.serverUpdateSettings]: ({ patch, providerInstanceMutation }) =>

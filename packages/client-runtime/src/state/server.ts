@@ -1004,6 +1004,10 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:server:synthesize-speech",
       tag: WS_METHODS.serverSynthesizeSpeech,
     }),
+    speechVoices: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:speech-voices",
+      tag: WS_METHODS.serverListSpeechVoices,
+    }),
     storageCleanupReport: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:server:storage-cleanup-report",
       tag: WS_METHODS.serverGetStorageCleanupReport,

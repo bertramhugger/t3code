@@ -58,6 +58,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.serverRunStorageCleanup]: "server",
   [WS_METHODS.serverGetStorageCleanupReport]: "server",
   [WS_METHODS.serverSynthesizeSpeech]: "server",
+  [WS_METHODS.serverListSpeechVoices]: "server",
   [WS_METHODS.serverGetSettings]: "server",
   [WS_METHODS.serverUpdateSettings]: "server",
   [WS_METHODS.serverSearchAcpRegistry]: "server",
