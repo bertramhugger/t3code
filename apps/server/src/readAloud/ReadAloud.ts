@@ -160,7 +160,22 @@ const VoicesResponse = Schema.Struct({
   ),
 });
 const GoogleErrorResponse = Schema.Struct({
-  error: Schema.Struct({ message: Schema.String }),
+  error: Schema.Struct({
+    message: Schema.String,
+    details: Schema.optional(
+      Schema.Array(
+        Schema.Struct({
+          reason: Schema.optional(Schema.String),
+          metadata: Schema.optional(
+            Schema.Struct({
+              activationUrl: Schema.optional(Schema.String),
+              serviceTitle: Schema.optional(Schema.String),
+            }),
+          ),
+        }),
+      ),
+    ),
+  }),
 });
 const decodeSynthesizeResponse = Schema.decodeUnknownEffect(SynthesizeResponse);
 const decodeVoicesResponse = Schema.decodeUnknownEffect(VoicesResponse);
@@ -190,6 +205,29 @@ export function voiceListForLanguage(
     languageCodes: [...languageCodes].toSorted(),
     voices: matching.toSorted((left, right) => left.name.localeCompare(right.name)),
   };
+}
+
+/**
+ * Google's message for a switched-off API is a paragraph with the link buried
+ * in it; a toast cuts that off, so name the API and carry the link separately.
+ */
+export function googleError(body: unknown, status: number): ReadAloudError {
+  const decoded = decodeGoogleError(body);
+  if (decoded._tag === "None") {
+    return new ReadAloudError({ detail: `Google Text-to-Speech failed with status ${status}.` });
+  }
+  const { message, details } = decoded.value.error;
+  const disabled = details?.find((detail) => detail.reason === "SERVICE_DISABLED")?.metadata;
+  if (disabled?.activationUrl) {
+    const service = disabled.serviceTitle ?? "A required API";
+    return new ReadAloudError({
+      detail: `${service} is turned off in your Google Cloud project${
+        service === "Agent Platform API" ? ", and Gemini voices need it" : ""
+      }. Enable it, wait a minute, and try again.`,
+      actionUrl: disabled.activationUrl,
+    });
+  }
+  return new ReadAloudError({ detail: `Google Text-to-Speech: ${message}` });
 }
 
 /** @public Service construction is part of the canonical Effect module API. */
@@ -230,13 +268,7 @@ export const make = Effect.gen(function* () {
       ),
     );
     if (response.status < 200 || response.status >= 300) {
-      const googleError = decodeGoogleError(body);
-      return yield* new ReadAloudError({
-        detail:
-          googleError._tag === "Some"
-            ? `Google Text-to-Speech: ${googleError.value.error.message}`
-            : `Google Text-to-Speech failed with status ${response.status}.`,
-      });
+      return yield* googleError(body, response.status);
     }
     return body;
   });

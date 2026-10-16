@@ -73,6 +73,8 @@ export type ReadAloudVoiceList = typeof ReadAloudVoiceList.Type;
 
 export class ReadAloudError extends Schema.TaggedError<ReadAloudError>()("ReadAloudError", {
   detail: Schema.String,
+  /** A page that fixes the problem, such as Google's switch for a disabled API. */
+  actionUrl: Schema.optional(Schema.String),
 }) {
   override get message(): string {
     return this.detail;

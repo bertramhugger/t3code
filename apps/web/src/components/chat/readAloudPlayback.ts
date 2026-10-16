@@ -1,13 +1,16 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import { type EnvironmentId, ReadAloudError } from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
+import * as Schema from "effect/Schema";
 import { useCallback, useSyncExternalStore } from "react";
 
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { toastManager } from "../ui/toast";
+
+const isReadAloudError = Schema.is(ReadAloudError);
 
 export type ReadAloudPhase = "idle" | "loading" | "playing";
 
@@ -76,10 +79,19 @@ export function useToggleReadAloud() {
         setCurrent(null);
         if (isAtomCommandInterrupted(result)) return;
         const error = squashAtomCommandFailure(result);
+        const actionUrl = isReadAloudError(error) ? error.actionUrl : undefined;
         toastManager.add({
           type: "error",
           title: "Couldn't read the message aloud",
           description: error instanceof Error ? error.message : String(error),
+          ...(actionUrl
+            ? {
+                actionProps: {
+                  children: "Enable API",
+                  onClick: () => window.open(actionUrl, "_blank", "noopener,noreferrer"),
+                },
+              }
+            : {}),
         });
         return;
       }

@@ -155,6 +155,32 @@ describe("voiceListForLanguage", () => {
   });
 });
 
+describe("googleError", () => {
+  it("turns a disabled API into a short message with its switch", () => {
+    const activationUrl =
+      "https://console.developers.google.com/apis/api/aiplatform.googleapis.com/overview?project=1";
+    const error = ReadAloud.googleError(
+      {
+        error: {
+          message: "Agent Platform API has not been used in project 1 before or it is disabled…",
+          details: [
+            {
+              "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+              reason: "SERVICE_DISABLED",
+              metadata: { activationUrl, serviceTitle: "Agent Platform API" },
+            },
+          ],
+        },
+      },
+      403,
+    );
+    expect(error.actionUrl).toBe(activationUrl);
+    expect(error.detail).toBe(
+      "Agent Platform API is turned off in your Google Cloud project, and Gemini voices need it. Enable it, wait a minute, and try again.",
+    );
+  });
+});
+
 const googleClient = (
   respond: (request: HttpClientRequest.HttpClientRequest) => Response,
   requests: HttpClientRequest.HttpClientRequest[] = [],
