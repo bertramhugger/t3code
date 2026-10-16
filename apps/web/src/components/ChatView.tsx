@@ -454,7 +454,12 @@ import type { AssistantCitationRequest } from "./chat/AssistantCitationSource";
 import { MessagesTimeline, type MessagesTimelineHistoryControls } from "./chat/MessagesTimeline";
 import { ProviderSubagentBar } from "./chat/ProviderSubagentBar";
 import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
-import { resolveTimelineIsAtEnd, worktreeSetupAgentStarted } from "./chat/MessagesTimeline.logic";
+import {
+  resolveAssistantMessageCopyState,
+  resolveTimelineIsAtEnd,
+  worktreeSetupAgentStarted,
+} from "./chat/MessagesTimeline.logic";
+import { subscribeReadLatestMessage, useToggleReadAloud } from "./chat/readAloudPlayback";
 import {
   overlayComposerIsResting,
   resolveComposerTimelineInset,
@@ -6987,6 +6992,35 @@ export default function ChatView(props: ChatViewProps) {
     );
   };
   const copyActiveThreadReferenceStable = useStableCallback(copyActiveThreadReference);
+  const toggleReadAloud = useToggleReadAloud();
+  // Reads the newest finished agent message, the same text its read-aloud button speaks.
+  const readLatestMessageAloud = () => {
+    if (!activeThread) return;
+    if (!readAloudEnabled) {
+      toastManager.add({
+        type: "info",
+        title: "Read aloud isn't set up",
+        description: "Add a Google Cloud API key under Settings → Integrations.",
+      });
+      return;
+    }
+    const message = timelineMessages.findLast(
+      (candidate) =>
+        candidate.role === "assistant" && !candidate.streaming && candidate.text.trim().length > 0,
+    );
+    const { text } = resolveAssistantMessageCopyState({
+      text: message?.text ?? null,
+      showCopyButton: true,
+      streaming: false,
+    });
+    if (!message || !text) return;
+    void toggleReadAloud({ environmentId: activeThread.environmentId, key: message.id, text });
+  };
+  const readLatestMessageAloudStable = useStableCallback(readLatestMessageAloud);
+  useEffect(
+    () => subscribeReadLatestMessage(readLatestMessageAloudStable),
+    [readLatestMessageAloudStable],
+  );
   const pullRequestPanelTarget = activeThread
     ? threadPullRequestPanelTarget({
         projectId: activeThread.projectId,
@@ -7913,6 +7947,13 @@ export default function ChatView(props: ChatViewProps) {
         event.preventDefault();
         event.stopPropagation();
         if (!event.repeat) copyActiveThreadReferenceStable();
+        return;
+      }
+
+      if (command === "thread.readAloud") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.repeat) readLatestMessageAloudStable();
         return;
       }
 

@@ -4,6 +4,11 @@ Agent messages can be read aloud by Google Cloud Text-to-Speech. The read-aloud 
 to the copy button on each finished agent message. Click it to listen, and click it again to stop.
 Starting another message stops the one playing.
 
+To hear the latest agent message without reaching for the mouse, press `mod+alt+r`
+(**Cmd+Option+R** on macOS, **Ctrl+Alt+R** elsewhere) or run **Read latest message aloud** from
+the command palette. Press it again to stop. You can change the shortcut under
+[**Settings → Keybindings**](./keybindings.md).
+
 ## Set it up
 
 1. In the Google Cloud console, enable the

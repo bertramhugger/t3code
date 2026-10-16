@@ -1549,6 +1549,32 @@ describe("composer and pull request shortcuts", () => {
     });
   }
 
+  it("reads the latest message aloud with mod+alt+r outside terminals", () => {
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "®", code: "KeyR", metaKey: true, altKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel" },
+      ),
+      "thread.readAloud",
+    );
+    assert.strictEqual(
+      resolveShortcutCommand(
+        event({ key: "r", code: "KeyR", ctrlKey: true, altKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "Linux" },
+      ),
+      "thread.readAloud",
+    );
+    assert.isNull(
+      resolveShortcutCommand(
+        event({ key: "®", code: "KeyR", metaKey: true, altKey: true }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform: "MacIntel", context: { terminalFocus: true } },
+      ),
+    );
+  });
+
   const altEffortBindings = compileResolvedKeybindingsConfig([
     { key: "mod+alt+e", command: "composer.effort", when: "!terminalFocus" },
   ]);

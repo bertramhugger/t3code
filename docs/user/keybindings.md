@@ -148,6 +148,9 @@ actions of the same kind undo together. The notice remains available for five
 seconds after the latest action. The default shortcut skips text fields and
 terminals so native undo keeps working there.
 
+`thread.readAloud` (`mod+alt+r` by default) reads the latest finished agent message
+in the open thread [aloud](./read-aloud.md). Press it again to stop.
+
 `navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
 through the pages you have visited, like a browser's back and forward buttons.
 

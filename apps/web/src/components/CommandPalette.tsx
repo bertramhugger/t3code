@@ -77,7 +77,9 @@ import {
   SquarePenIcon,
   SunIcon,
   TextSearchIcon,
+  Volume2Icon,
 } from "lucide-react";
+import { requestReadLatestMessage } from "./chat/readAloudPlayback";
 import { requestThreadFindOpen } from "./chat/threadFindActionBus";
 import {
   useCallback,
@@ -1870,6 +1872,20 @@ function OpenCommandPaletteDialog(props: {
     });
   }
 
+  if (activeThreadId) {
+    actionItems.push({
+      kind: "action",
+      value: "read-latest-message-aloud",
+      title: "Read latest message aloud",
+      searchTerms: ["read aloud", "speak", "speech", "voice", "listen", "tts"],
+      icon: <Volume2Icon className={ITEM_ICON_CLASS} />,
+      shortcutCommand: "thread.readAloud",
+      run: async () => {
+        requestReadLatestMessage();
+      },
+    });
+  }
+
   // Read once per open: the palette is a snapshot of the composer, not a live view of it.
   const promptLinkTarget = paletteRouteTarget
     ? paletteRouteTarget.kind === "server"
@@ -3142,6 +3158,13 @@ function OpenCommandPaletteDialog(props: {
       if (matchingItem) {
         executeItem(matchingItem);
       }
+      return;
+    }
+    if (command === "thread.readAloud" && activeThreadId) {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      requestReadLatestMessage();
       return;
     }
     if (command === "thread.copyReference") {
