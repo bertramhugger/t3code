@@ -37,10 +37,20 @@ export const ReadAloudSynthesizeInput = Schema.Struct({
 });
 export type ReadAloudSynthesizeInput = typeof ReadAloudSynthesizeInput.Type;
 
+export const ReadAloudSegment = Schema.Struct({
+  /** The spoken text, without markdown. Clients find it in the rendered message to highlight it. */
+  text: Schema.String,
+  /** Seconds into the audio where this text starts. */
+  start: Schema.Number,
+});
+export type ReadAloudSegment = typeof ReadAloudSegment.Type;
+
 export const ReadAloudSynthesizeResult = Schema.Struct({
   /** Base64 audio in `mimeType`. */
   audioContent: Schema.String,
   mimeType: Schema.Literals(["audio/mpeg", "audio/wav"]),
+  /** One entry per sentence, in reading order. */
+  segments: Schema.Array(ReadAloudSegment),
 });
 export type ReadAloudSynthesizeResult = typeof ReadAloudSynthesizeResult.Type;
 

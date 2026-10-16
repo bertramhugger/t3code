@@ -49,26 +49,36 @@ describe("speechTextFromMarkdown", () => {
   });
 });
 
-describe("splitSpeechChunks", () => {
-  it("packs sentences under the byte limit without splitting them", () => {
-    expect(ReadAloud.splitSpeechChunks("One two. Three four! Five six?", 15)).toEqual([
+describe("speechSentences", () => {
+  it("splits prose into sentences and drops punctuation-only pieces", () => {
+    expect(ReadAloud.speechSentences("One two. Three four!\n\nFive six? ...")).toEqual([
       "One two.",
       "Three four!",
       "Five six?",
     ]);
-    expect(ReadAloud.splitSpeechChunks("One. Two. Three.", 20)).toEqual(["One. Two. Three."]);
   });
 
   it("splits an oversized sentence on words", () => {
-    const chunks = ReadAloud.splitSpeechChunks("alpha beta gamma delta epsilon", 12);
-    expect(chunks).toEqual(["alpha beta", "gamma delta", "epsilon"]);
-    expect(chunks.every((chunk) => Buffer.byteLength(chunk) <= 12)).toBe(true);
+    const sentences = ReadAloud.speechSentences("alpha beta gamma delta epsilon", 12);
+    expect(sentences).toEqual(["alpha beta", "gamma delta", "epsilon"]);
+    expect(sentences.every((sentence) => Buffer.byteLength(sentence) <= 12)).toBe(true);
   });
 
   it("counts multi-byte characters as bytes", () => {
-    const chunks = ReadAloud.splitSpeechChunks("æøå æøå æøå", 12);
-    expect(chunks.every((chunk) => Buffer.byteLength(chunk) <= 12)).toBe(true);
-    expect(chunks.join(" ")).toBe("æøå æøå æøå");
+    const sentences = ReadAloud.speechSentences("æøå æøå æøå", 12);
+    expect(sentences.every((sentence) => Buffer.byteLength(sentence) <= 12)).toBe(true);
+    expect(sentences.join(" ")).toBe("æøå æøå æøå");
+  });
+});
+
+describe("mp3Duration", () => {
+  // MPEG-2 Layer III, 32 kbps, 24 kHz, mono: what Google sends. Each frame is 96 bytes and 24 ms.
+  const frame = Buffer.concat([Buffer.from([0xff, 0xf3, 0x44, 0xc4]), Buffer.alloc(92)]);
+
+  it("adds up frame lengths, past an ID3 tag", () => {
+    const id3 = Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 5, 1, 2, 3, 4, 5]);
+    const file = Buffer.concat([id3, ...Array.from({ length: 50 }, () => frame)]);
+    expect(ReadAloud.mp3Duration(file)).toBeCloseTo(1.2, 6);
   });
 });
 
@@ -167,6 +177,10 @@ describe("joinWavChunks", () => {
     const joined = ReadAloud.joinWavChunks([wav([1, 2]), wav([3, 4, 5])]);
     expect(joined).toEqual(wav([1, 2, 3, 4, 5]));
   });
+
+  it("measures a WAV by its sample bytes", () => {
+    expect(ReadAloud.wavDuration(wav(Array.from({ length: 12_000 }, () => 0)))).toBe(0.5);
+  });
 });
 
 describe("googleError", () => {
@@ -221,6 +235,7 @@ describe("ReadAloud.synthesize", () => {
       expect(requests[0]!.headers["x-goog-api-key"]).toBe("test-key");
       expect(Buffer.from(result.audioContent, "base64").toString()).toBe("chunk0chunk1");
       expect(result.mimeType).toBe("audio/mpeg");
+      expect(result.segments.map((segment) => segment.text)).toHaveLength(2);
     }).pipe(
       Effect.provide([
         ServerSettings.layerTest({

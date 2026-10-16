@@ -4,9 +4,10 @@
  *
  * The key never leaves the server: clients send the message text and get MP3
  * audio back, and ask the server for the voice catalog, so a phone or a remote
- * browser can read aloud without holding the credential. Markdown is reduced to plain prose first, and long messages
- * are split under Google's 5000-byte request limit and joined back into one
- * MP3 stream.
+ * browser can read aloud without holding the credential. Markdown is reduced
+ * to plain prose first, then each sentence is synthesized on its own and the
+ * pieces are joined into one file, with the time each sentence starts so
+ * clients can highlight it while it is read.
  *
  * @module readAloud/ReadAloud
  */
@@ -31,7 +32,7 @@ import * as Settings from "../serverSettings.ts";
 
 const SYNTHESIZE_URL = "https://texttospeech.googleapis.com/v1/text:synthesize";
 const VOICES_URL = "https://texttospeech.googleapis.com/v1/voices";
-// Google caps `input.text` at 5000 bytes; leave headroom for multi-byte text.
+// Google caps `input.text` at 5000 bytes; a sentence longer than this is split on words.
 const MAX_CHUNK_BYTES = 4_500;
 const DEFAULT_LANGUAGE_CODE = "en-US";
 
@@ -69,27 +70,18 @@ export function speechTextFromMarkdown(markdown: string): string {
 
 const byteLength = (text: string) => Buffer.byteLength(text, "utf8");
 
-/** Packs sentences into chunks of at most `maxBytes`, splitting oversized ones on words. */
-export function splitSpeechChunks(text: string, maxBytes = MAX_CHUNK_BYTES): string[] {
-  const pieces = text
+/**
+ * Splits text into the sentences that are synthesized one request each, so the
+ * length of each piece of audio says when its sentence starts. Sentences over
+ * `maxBytes` are split on words.
+ */
+export function speechSentences(text: string, maxBytes = MAX_CHUNK_BYTES): string[] {
+  return text
     .split(/\n{2,}/)
     .flatMap((paragraph) => paragraph.match(/[^.!?\n]+(?:[.!?]+|\n|$)/g) ?? [])
     .map((sentence) => sentence.trim())
-    .filter((sentence) => sentence.length > 0)
+    .filter((sentence) => /[\p{L}\p{N}]/u.test(sentence))
     .flatMap((sentence) => splitOversized(sentence, maxBytes));
-  const chunks: string[] = [];
-  let current = "";
-  for (const piece of pieces) {
-    const next = current.length === 0 ? piece : `${current} ${piece}`;
-    if (byteLength(next) <= maxBytes) {
-      current = next;
-    } else {
-      chunks.push(current);
-      current = piece;
-    }
-  }
-  if (current.length > 0) chunks.push(current);
-  return chunks;
 }
 
 function splitOversized(sentence: string, maxBytes: number): string[] {
@@ -174,6 +166,58 @@ export function joinWavChunks(files: readonly Buffer[]): Buffer {
   dataHeader.write("data", 0, "ascii");
   dataHeader.writeUInt32LE(data.length, 4);
   return Buffer.concat([header, format, dataHeader, data]);
+}
+
+// Layer III bitrates (kbps) by bitrate index, for MPEG-1 and for MPEG-2/2.5.
+const MP3_BITRATES = {
+  mpeg1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],
+  mpeg2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
+};
+// Sample rates by version bits: 3 is MPEG-1, 2 is MPEG-2, 0 is MPEG-2.5.
+const MP3_SAMPLE_RATES: Record<number, readonly number[]> = {
+  3: [44100, 48000, 32000],
+  2: [22050, 24000, 16000],
+  0: [11025, 12000, 8000],
+};
+
+/** Seconds of audio in an MP3, by walking its frame headers. */
+export function mp3Duration(file: Buffer): number {
+  let offset = 0;
+  if (file.toString("ascii", 0, 3) === "ID3" && file.length >= 10) {
+    // The ID3v2 size is four 7-bit bytes after the 6-byte header.
+    offset = 10 + ((file[6]! << 21) | (file[7]! << 14) | (file[8]! << 7) | file[9]!);
+  }
+  let seconds = 0;
+  while (offset + 4 <= file.length) {
+    const header = file.readUInt32BE(offset);
+    const version = (header >>> 19) & 3;
+    const sampleRate = MP3_SAMPLE_RATES[version]?.[(header >>> 10) & 3];
+    const bitrate = (version === 3 ? MP3_BITRATES.mpeg1 : MP3_BITRATES.mpeg2)[(header >>> 12) & 15];
+    const isLayer3Frame = header >>> 21 === 0x7ff && ((header >>> 17) & 3) === 1;
+    if (!isLayer3Frame || !sampleRate || !bitrate) {
+      offset += 1;
+      continue;
+    }
+    const samples = version === 3 ? 1152 : 576;
+    seconds += samples / sampleRate;
+    offset += Math.floor((samples / 8) * ((bitrate * 1000) / sampleRate)) + ((header >>> 9) & 1);
+  }
+  return seconds;
+}
+
+/** Seconds of audio in a PCM WAV. */
+export function wavDuration(file: Buffer): number {
+  let byteRate = 0;
+  let dataBytes = 0;
+  let offset = 12;
+  while (offset + 8 <= file.length) {
+    const id = file.toString("ascii", offset, offset + 4);
+    const size = file.readUInt32LE(offset + 4);
+    if (id === "fmt ") byteRate = file.readUInt32LE(offset + 16);
+    if (id === "data") dataBytes += Math.min(size, file.length - offset - 8);
+    offset += 8 + size + (size % 2);
+  }
+  return byteRate > 0 ? dataBytes / byteRate : 0;
 }
 
 const SynthesizeResponse = Schema.Struct({ audioContent: Schema.String });
@@ -319,23 +363,30 @@ export const make = Effect.gen(function* () {
 
   const synthesize = Effect.fn("ReadAloud.synthesize")(function* (text: string) {
     const settings = yield* readSettings;
-    const chunks = splitSpeechChunks(speechTextFromMarkdown(text));
-    if (chunks.length === 0) {
+    const sentences = speechSentences(speechTextFromMarkdown(text));
+    if (sentences.length === 0) {
       return yield* new ReadAloudError({ detail: "This message has nothing to read aloud." });
     }
-    const audio = yield* Effect.forEach(chunks, (chunk) => synthesizeChunk(settings, chunk), {
-      concurrency: 4,
+    // One sentence per request: parallel requests finish sooner than one long one, and
+    // each piece's length says when its sentence starts, for highlighting.
+    const audio = yield* Effect.forEach(
+      sentences,
+      (sentence) => synthesizeChunk(settings, sentence),
+      { concurrency: 8 },
+    );
+    const wav = settings.audioQuality === "high";
+    const duration = wav ? wavDuration : mp3Duration;
+    let start = 0;
+    const segments = sentences.map((sentence, index) => {
+      const segment = { text: sentence, start };
+      start += duration(audio[index]!);
+      return segment;
     });
-    if (settings.audioQuality === "high") {
-      return {
-        audioContent: joinWavChunks(audio).toString("base64"),
-        mimeType: "audio/wav" as const,
-      };
-    }
-    // MP3 frames are self-delimiting, so per-chunk audio joins into one playable stream.
     return {
-      audioContent: Buffer.concat(audio).toString("base64"),
-      mimeType: "audio/mpeg" as const,
+      // MP3 frames are self-delimiting, so per-sentence MP3s join into one playable stream.
+      audioContent: (wav ? joinWavChunks(audio) : Buffer.concat(audio)).toString("base64"),
+      mimeType: wav ? ("audio/wav" as const) : ("audio/mpeg" as const),
+      segments,
     };
   });
 

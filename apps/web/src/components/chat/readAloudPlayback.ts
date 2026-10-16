@@ -9,6 +9,11 @@ import { useCallback, useSyncExternalStore } from "react";
 import { serverEnvironment } from "~/state/server";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { toastManager } from "../ui/toast";
+import {
+  clearSpokenHighlight,
+  highlightSpokenSegment,
+  spokenHighlightIsAttached,
+} from "./readAloudHighlight";
 
 const isReadAloudError = Schema.is(ReadAloudError);
 
@@ -33,6 +38,7 @@ function setCurrent(next: Playback | null) {
   if (current?.phase === "playing") {
     current.audio.pause();
     URL.revokeObjectURL(current.url);
+    clearSpokenHighlight();
   }
   current = next;
   for (const listener of listeners) listener();
@@ -98,6 +104,17 @@ export function useToggleReadAloud() {
       const url = audioUrl(result.value.audioContent, result.value.mimeType);
       const audio = new Audio(url);
       const isCurrent = () => current?.phase === "playing" && current.audio === audio;
+      const { segments } = result.value;
+      let spoken = -1;
+      // About four times a second; the highlight only repaints when the sentence changes
+      // or its row was scrolled away and back.
+      audio.addEventListener("timeupdate", () => {
+        if (!isCurrent()) return;
+        const index = segments.findLastIndex((segment) => segment.start <= audio.currentTime);
+        if (index === spoken && spokenHighlightIsAttached()) return;
+        spoken = index;
+        highlightSpokenSegment(input.key, segments, index);
+      });
       audio.addEventListener("ended", () => {
         if (isCurrent()) setCurrent(null);
       });

@@ -643,6 +643,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
       transparent
     );
   }
+  /* The sentence being read aloud. */
+  ::highlight(t3-read-aloud) {
+    background-color: color-mix(in oklab, var(--primary) 22%, transparent);
+  }
   ::highlight(t3-assistant-citation-comment) {
     background-color: color-mix(in oklab, var(--primary) 45%, transparent);
   }
