@@ -348,6 +348,7 @@ import {
   useClientSettings,
   useClientSettingsHydrated,
   useEnvironmentSettings,
+  usePrimarySettings,
 } from "../hooks/useSettings";
 import { useNowMinute } from "../hooks/useNowMinute";
 import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations";
@@ -1893,7 +1894,17 @@ export default function ChatView(props: ChatViewProps) {
     (store) => store.setStickyModelSelection,
   );
   const timestampFormat = settings.timestampFormat;
-  const readAloudEnabled = readAloudApiKey(settings.readAloud).length > 0;
+  // This computer's voice service reads every thread, remote projects included; a thread's own
+  // environment only speaks when this computer has no key. Null when neither is set up.
+  const primaryReadAloudReady = usePrimarySettings(
+    (primary) => readAloudApiKey(primary.readAloud).length > 0,
+  );
+  const readAloudEnvironmentId =
+    primaryEnvironment && primaryReadAloudReady
+      ? primaryEnvironment.environmentId
+      : readAloudApiKey(settings.readAloud).length > 0
+        ? environmentId
+        : null;
   const navigate = useNavigate();
   const citationLocation = useLocation({
     select: (location) => ({
@@ -6997,7 +7008,7 @@ export default function ChatView(props: ChatViewProps) {
   // Reads the newest finished agent message, the same text its read-aloud button speaks.
   const readLatestMessageAloud = () => {
     if (!activeThread) return;
-    if (!readAloudEnabled) {
+    if (readAloudEnvironmentId === null) {
       toastManager.add({
         type: "info",
         title: "Read aloud isn't set up",
@@ -7015,7 +7026,7 @@ export default function ChatView(props: ChatViewProps) {
       streaming: false,
     });
     if (!message || !text) return;
-    void toggleReadAloud({ environmentId: activeThread.environmentId, key: message.id, text });
+    void toggleReadAloud({ environmentId: readAloudEnvironmentId, key: message.id, text });
   };
   const readLatestMessageAloudStable = useStableCallback(readLatestMessageAloud);
   useEffect(
@@ -11400,7 +11411,7 @@ export default function ChatView(props: ChatViewProps) {
                 }
                 resolvedTheme={resolvedTheme}
                 timestampFormat={timestampFormat}
-                readAloudEnabled={readAloudEnabled}
+                readAloudEnvironmentId={readAloudEnvironmentId}
                 workspaceRoot={
                   paintOnlyDisplayedTimeline
                     ? (heldPaintContext?.workspaceRoot ?? undefined)

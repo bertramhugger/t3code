@@ -27,7 +27,10 @@ Under **Settings → Integrations → Read aloud**, choose a **Voice service** a
 Each service keeps its own key and voice, so you can switch between them without setting them up
 again. Keys are stored on the environment, not on your device, so the desktop app and every browser
 connected to that environment get the button, remote ones included. Clients never see the keys.
-Without a key for the chosen service, the button does not appear. The mobile app does not read
+Messages in projects on other environments, such as a remote server, are read by the computer
+you're using when it has a key, so you only need to set read aloud up once, on your own machine.
+Only when it has none is a remote project read with that environment's own service. Without a key
+on either, the button does not appear. The mobile app does not read
 messages aloud yet.
 
 ## Voices

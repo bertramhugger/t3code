@@ -329,7 +329,8 @@ interface TimelineRowSharedState {
   runs: ReadonlyArray<HandoffTimelineRun>;
   activeThreadEnvironmentId: EnvironmentId;
   /** The environment has a Google Text-to-Speech key, so assistant messages can be read aloud. */
-  readAloudEnabled: boolean;
+  /** Where read aloud is synthesized; null hides the button. */
+  readAloudEnvironmentId: EnvironmentId | null;
   onRevertToTurnCount: (targetTurnCount: number, messageId: MessageId) => void;
   onUseArtifactTemplate: (template: CodexArtifactTemplate) => void;
   /** Sends text an MCP App asked to post, after the user approved it. */
@@ -511,7 +512,7 @@ interface MessagesTimelineProps {
   onFileOpen?: (attachment: ChatFileAttachment) => void;
   onFileDownload?: (attachment: ChatFileAttachment) => void;
   activeThreadEnvironmentId: EnvironmentId;
-  readAloudEnabled?: boolean;
+  readAloudEnvironmentId?: EnvironmentId | null;
   markdownCwd: string | undefined;
   resolvedTheme: "light" | "dark";
   timestampFormat: TimestampFormat;
@@ -618,7 +619,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
   onFileOpen = NOOP_OPEN_ATTACHMENT,
   onFileDownload = NOOP_OPEN_ATTACHMENT,
   activeThreadEnvironmentId,
-  readAloudEnabled = false,
+  readAloudEnvironmentId = null,
   markdownCwd,
   resolvedTheme,
   timestampFormat,
@@ -1367,7 +1368,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       providerStatuses,
       runs,
       activeThreadEnvironmentId,
-      readAloudEnabled,
+      readAloudEnvironmentId,
       onRevertToTurnCount,
       onRunShellCommand,
       findActive,
@@ -1406,7 +1407,7 @@ const ConversationTimeline = memo(function ConversationTimeline({
       providerStatuses,
       runs,
       activeThreadEnvironmentId,
-      readAloudEnabled,
+      readAloudEnvironmentId,
       onRevertToTurnCount,
       onRunShellCommand,
       findActive,
@@ -2989,7 +2990,7 @@ function AssistantMessageMeta({
         showCopyButton={showCopyButton}
         streaming={copyStreaming}
       />
-      {ctx.readAloudEnabled ? (
+      {ctx.readAloudEnvironmentId ? (
         <AssistantReadAloudButton
           message={message}
           showCopyButton={showCopyButton}
@@ -3051,11 +3052,11 @@ function AssistantReadAloudButton({
     showCopyButton,
     streaming,
   });
-  if (!visible || !text) return null;
+  if (!visible || !text || !ctx.readAloudEnvironmentId) return null;
 
   return (
     <MessageReadAloudButton
-      environmentId={ctx.activeThreadEnvironmentId}
+      environmentId={ctx.readAloudEnvironmentId}
       messageKey={message.id}
       text={text}
     />
