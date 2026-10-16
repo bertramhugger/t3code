@@ -84,22 +84,19 @@ export const ReadAloudSynthesizeInput = Schema.Struct({
 });
 export type ReadAloudSynthesizeInput = typeof ReadAloudSynthesizeInput.Type;
 
-export const ReadAloudSegment = Schema.Struct({
+/**
+ * One sentence of a message, streamed in reading order as soon as it is
+ * synthesized, so playback starts after the first instead of the whole message.
+ */
+export const ReadAloudSentenceAudio = Schema.Struct({
+  index: Schema.Number,
   /** The spoken text, without markdown. Clients find it in the rendered message to highlight it. */
   text: Schema.String,
-  /** Seconds into the audio where this text starts. */
-  start: Schema.Number,
-});
-export type ReadAloudSegment = typeof ReadAloudSegment.Type;
-
-export const ReadAloudSynthesizeResult = Schema.Struct({
-  /** Base64 audio in `mimeType`. */
+  /** Base64 audio in `mimeType`: one complete file per sentence. */
   audioContent: Schema.String,
   mimeType: Schema.Literals(["audio/mpeg", "audio/wav"]),
-  /** One entry per sentence, in reading order. */
-  segments: Schema.Array(ReadAloudSegment),
 });
-export type ReadAloudSynthesizeResult = typeof ReadAloudSynthesizeResult.Type;
+export type ReadAloudSentenceAudio = typeof ReadAloudSentenceAudio.Type;
 
 export const ReadAloudVoiceGender = Schema.Literals(["female", "male", "neutral"]);
 

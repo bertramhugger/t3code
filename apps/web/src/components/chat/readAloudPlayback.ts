@@ -1,4 +1,8 @@
-import { type EnvironmentId, ReadAloudError, type ReadAloudSegment } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  ReadAloudError,
+  type ReadAloudSentenceAudio,
+} from "@t3tools/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -13,37 +17,43 @@ import {
   clearSpokenHighlight,
   highlightSpokenSegment,
   segmentAtSpeechKey,
-  spokenHighlightIsAttached,
 } from "./readAloudHighlight";
 
 const isReadAloudError = Schema.is(ReadAloudError);
 
 export type ReadAloudPhase = "idle" | "loading" | "playing";
 
-// One voice at a time across the whole app: starting a message stops the last one.
-// Both the message button and the read-latest shortcut drive this, so each
-// button shows a message's state no matter which started it.
-type Playback =
-  | { readonly key: string; readonly phase: "loading" }
-  | {
-      readonly key: string;
-      readonly phase: "playing";
-      readonly audio: HTMLAudioElement;
-      readonly url: string;
-      readonly segments: readonly ReadAloudSegment[];
-    };
+// Room for the first sentence to be scheduled before its start time passes.
+const SCHEDULE_LEAD_SECONDS = 0.05;
 
-let current: Playback | null = null;
+/**
+ * One message being read. Sentences arrive one by one; each is decoded and
+ * scheduled right after the previous on a Web Audio clock, so playback starts
+ * with the first sentence and runs gapless while the rest are still on the way.
+ */
+interface Session {
+  readonly key: string;
+  phase: "loading" | "playing";
+  /** Stops audio and the stream, which also stops the server's remaining requests. */
+  readonly stop: () => void;
+  /** Jumps to the sentence at a click's position in the message's text. */
+  readonly seek: (speechKey: number) => void;
+}
+
+// One voice at a time across the whole app: starting a message stops the last one.
+// The message button, the read-latest shortcut and clicks all drive this, so each
+// button shows a message's state no matter which started it.
+let current: Session | null = null;
 const listeners = new Set<() => void>();
 
-function setCurrent(next: Playback | null) {
-  if (current?.phase === "playing") {
-    current.audio.pause();
-    URL.revokeObjectURL(current.url);
-    clearSpokenHighlight();
-  }
-  current = next;
+function notify() {
   for (const listener of listeners) listener();
+}
+
+function setCurrent(next: Session | null) {
+  current?.stop();
+  current = next;
+  notify();
 }
 
 function subscribe(listener: () => void) {
@@ -51,10 +61,150 @@ function subscribe(listener: () => void) {
   return () => listeners.delete(listener);
 }
 
-// A blob URL, not a data URL: the desktop app's CSP allows `blob:` media only.
-function audioUrl(base64: string, mimeType: string): string {
-  const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
-  return URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+function decodeBase64(base64: string): ArrayBuffer {
+  return Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)).buffer;
+}
+
+function showError(title: string, error: unknown) {
+  const actionUrl = isReadAloudError(error) ? error.actionUrl : undefined;
+  toastManager.add({
+    type: "error",
+    title,
+    description: error instanceof Error ? error.message : String(error),
+    ...(actionUrl
+      ? {
+          actionProps: {
+            children: "Enable API",
+            onClick: () => window.open(actionUrl, "_blank", "noopener,noreferrer"),
+          },
+        }
+      : {}),
+  });
+}
+
+function startSession(key: string, startAtSpeechKey: number | undefined) {
+  // Made synchronously in the click or key press, so autoplay rules allow it to sound.
+  const context = new AudioContext();
+  void context.resume();
+  const abort = new AbortController();
+  const sentences: string[] = [];
+  const buffers: AudioBuffer[] = [];
+  const sources = new Set<AudioBufferSourceNode>();
+  const timers = new Set<number>();
+  // Where playback starts: unknown until the clicked sentence arrives.
+  let startIndex: number | null = startAtSpeechKey === undefined ? 0 : null;
+  let nextIndex = 0;
+  let nextStart = 0;
+  let streamDone = false;
+  let stopped = false;
+
+  const finishIfDone = () => {
+    if (streamDone && sources.size === 0 && nextIndex >= buffers.length && current === session) {
+      setCurrent(null);
+    }
+  };
+
+  /** Schedules every decoded sentence from `nextIndex` on, each after the last. */
+  const schedule = () => {
+    if (stopped || startIndex === null) return;
+    while (nextIndex < buffers.length) {
+      const index = nextIndex++;
+      const buffer = buffers[index]!;
+      const source = context.createBufferSource();
+      source.buffer = buffer;
+      source.connect(context.destination);
+      const at = Math.max(nextStart, context.currentTime + SCHEDULE_LEAD_SECONDS);
+      source.start(at);
+      nextStart = at + buffer.duration;
+      sources.add(source);
+      source.addEventListener("ended", () => {
+        if (!sources.delete(source)) return;
+        finishIfDone();
+      });
+      const timer = window.setTimeout(
+        () => {
+          timers.delete(timer);
+          highlightSpokenSegment(key, sentences, index);
+        },
+        Math.max(0, (at - context.currentTime) * 1000),
+      );
+      timers.add(timer);
+    }
+    if (session.phase === "loading" && sources.size > 0) {
+      session.phase = "playing";
+      if (current === session) notify();
+    }
+  };
+
+  const clearScheduled = () => {
+    // Emptying the set first keeps the stopped sources' `ended` from finishing the session.
+    const stopping = [...sources];
+    sources.clear();
+    for (const source of stopping) source.stop();
+    for (const timer of timers) window.clearTimeout(timer);
+    timers.clear();
+  };
+
+  const startAt = (index: number) => {
+    clearScheduled();
+    startIndex = index;
+    nextIndex = index;
+    nextStart = 0;
+    schedule();
+  };
+
+  // Decoding is chained so sentences land in order even if a later one decodes faster.
+  let decoding = Promise.resolve();
+  const onSentence = (sentence: ReadAloudSentenceAudio) => {
+    sentences[sentence.index] = sentence.text;
+    decoding = decoding.then(async () => {
+      if (stopped) return;
+      buffers[sentence.index] = await context.decodeAudioData(decodeBase64(sentence.audioContent));
+      if (startIndex === null && startAtSpeechKey !== undefined) {
+        const clicked = segmentAtSpeechKey(key, sentences, startAtSpeechKey);
+        if (clicked !== null) startAt(clicked);
+        return;
+      }
+      schedule();
+    });
+  };
+
+  const session: Session = {
+    key,
+    phase: "loading",
+    stop: () => {
+      if (stopped) return;
+      stopped = true;
+      abort.abort();
+      clearScheduled();
+      void context.close();
+      clearSpokenHighlight();
+    },
+    seek: (speechKey) => {
+      const index = segmentAtSpeechKey(key, sentences, speechKey);
+      if (index !== null && index < buffers.length) startAt(index);
+    },
+  };
+
+  /** Called once the server has sent every sentence, or failed. */
+  const finish = async (failure: unknown) => {
+    await decoding.catch((error: unknown) => {
+      failure ??= error;
+    });
+    if (stopped) return;
+    if (failure !== undefined) {
+      const started = sources.size > 0;
+      if (current === session) setCurrent(null);
+      showError(started ? "Read aloud stopped" : "Couldn't read the message aloud", failure);
+      return;
+    }
+    streamDone = true;
+    // A click on text that no later sentence follows reads from the top.
+    if (startIndex === null) startAt(0);
+    finishIfDone();
+  };
+
+  return { session, signal: abort.signal, onSentence, finish };
 }
 
 /** The phase of `key` outside React, for click handlers. */
@@ -67,10 +217,7 @@ export function readAloudPhaseOf(key: string): ReadAloudPhase {
  * in the message's text (see `speechKeyIndexAtPoint`).
  */
 export function seekReadAloud(key: string, speechKey: number): void {
-  if (current?.phase !== "playing" || current.key !== key) return;
-  const index = segmentAtSpeechKey(key, current.segments, speechKey);
-  const segment = index === null ? undefined : current.segments[index];
-  if (segment) current.audio.currentTime = segment.start;
+  if (current?.key === key && current.phase === "playing") current.seek(speechKey);
 }
 
 /** What the message identified by `key` is doing right now. */
@@ -80,7 +227,7 @@ export function useReadAloudPhase(key: string): ReadAloudPhase {
 
 /**
  * Starts reading a message, or stops it if it is already loading or playing.
- * Audio comes from the environment's Google Text-to-Speech key.
+ * Audio comes from the environment's speech service.
  */
 export function useToggleReadAloud() {
   const synthesize = useAtomCommand(serverEnvironment.synthesizeSpeech, { reportFailure: false });
@@ -97,64 +244,20 @@ export function useToggleReadAloud() {
         setCurrent(null);
         return;
       }
-      const request: Playback = { key: input.key, phase: "loading" };
-      setCurrent(request);
+      const { session, signal, onSentence, finish } = startSession(
+        input.key,
+        input.startAtSpeechKey,
+      );
+      setCurrent(session);
       const result = await synthesize({
         environmentId: input.environmentId,
-        input: { text: input.text },
+        input: { text: input.text, signal, onSentence },
       });
-      // Stopped, or another message started, while the audio was being made.
-      if (current !== request) return;
-      if (result._tag === "Failure") {
-        setCurrent(null);
-        if (isAtomCommandInterrupted(result)) return;
-        const error = squashAtomCommandFailure(result);
-        const actionUrl = isReadAloudError(error) ? error.actionUrl : undefined;
-        toastManager.add({
-          type: "error",
-          title: "Couldn't read the message aloud",
-          description: error instanceof Error ? error.message : String(error),
-          ...(actionUrl
-            ? {
-                actionProps: {
-                  children: "Enable API",
-                  onClick: () => window.open(actionUrl, "_blank", "noopener,noreferrer"),
-                },
-              }
-            : {}),
-        });
-        return;
-      }
-      const url = audioUrl(result.value.audioContent, result.value.mimeType);
-      const audio = new Audio(url);
-      const isCurrent = () => current?.phase === "playing" && current.audio === audio;
-      const { segments } = result.value;
-      let spoken = -1;
-      // About four times a second; the highlight only repaints when the sentence changes
-      // or its row was scrolled away and back.
-      audio.addEventListener("timeupdate", () => {
-        if (!isCurrent()) return;
-        const index = segments.findLastIndex((segment) => segment.start <= audio.currentTime);
-        if (index === spoken && spokenHighlightIsAttached()) return;
-        spoken = index;
-        highlightSpokenSegment(input.key, segments, index);
-      });
-      audio.addEventListener("ended", () => {
-        if (isCurrent()) setCurrent(null);
-      });
-      if (input.startAtSpeechKey !== undefined) {
-        const index = segmentAtSpeechKey(input.key, segments, input.startAtSpeechKey);
-        if (index !== null) audio.currentTime = segments[index]!.start;
-      }
-      setCurrent({ key: input.key, phase: "playing", audio, url, segments });
-      await audio.play().catch((error: unknown) => {
-        if (isCurrent()) setCurrent(null);
-        toastManager.add({
-          type: "error",
-          title: "Couldn't play the audio",
-          description: error instanceof Error ? error.message : String(error),
-        });
-      });
+      await finish(
+        result._tag === "Failure" && !isAtomCommandInterrupted(result)
+          ? squashAtomCommandFailure(result)
+          : undefined,
+      );
     },
     [synthesize],
   );

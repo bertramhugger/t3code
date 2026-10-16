@@ -69,9 +69,9 @@ import { ExternalLauncherError, LaunchEditorInput } from "./editor.ts";
 import {
   ReadAloudError,
   ReadAloudListVoicesInput,
+  ReadAloudSentenceAudio,
   ReadAloudSynthesizeInput,
   ReadAloudVoiceList,
-  ReadAloudSynthesizeResult,
 } from "./readAloud.ts";
 import {
   AuthAccessStreamError,
@@ -765,7 +765,8 @@ const WsServerRunStorageCleanupRpc = Rpc.make(WS_METHODS.serverRunStorageCleanup
 });
 const WsServerSynthesizeSpeechRpc = Rpc.make(WS_METHODS.serverSynthesizeSpeech, {
   payload: ReadAloudSynthesizeInput,
-  success: ReadAloudSynthesizeResult,
+  success: ReadAloudSentenceAudio,
+  stream: true,
   error: Schema.Union([ReadAloudError, EnvironmentAuthorizationError]),
 });
 const WsServerListSpeechVoicesRpc = Rpc.make(WS_METHODS.serverListSpeechVoices, {

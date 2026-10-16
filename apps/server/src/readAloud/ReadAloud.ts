@@ -6,9 +6,8 @@
  * Keys never leave the server: clients send the message text and get audio
  * back, and ask the server for the voice catalog, so a phone or a remote
  * browser can read aloud without holding the credential. Markdown is reduced
- * to plain prose first, then each sentence is synthesized on its own and the
- * pieces are joined into one file, with the time each sentence starts so
- * clients can highlight it while it is read.
+ * to plain prose first, then each sentence is synthesized on its own and
+ * streamed to the client in order, so playback starts with the first sentence.
  *
  * @module readAloud/ReadAloud
  */
@@ -18,7 +17,7 @@ import {
   ReadAloudError,
   type ReadAloudProvider,
   type ReadAloudSettings,
-  type ReadAloudSynthesizeResult,
+  type ReadAloudSentenceAudio,
   type ReadAloudVoice,
   type ReadAloudVoiceList,
   speechVoiceLanguage,
@@ -29,6 +28,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientRequest } from "effect/http";
 
 import * as Settings from "../serverSettings.ts";
@@ -56,7 +56,7 @@ const DEFAULT_LANGUAGE_CODE = "en-US";
 export class ReadAloud extends Context.Service<
   ReadAloud,
   {
-    readonly synthesize: (text: string) => Effect.Effect<ReadAloudSynthesizeResult, ReadAloudError>;
+    readonly synthesize: (text: string) => Stream.Stream<ReadAloudSentenceAudio, ReadAloudError>;
     readonly listVoices: (
       provider: ReadAloudProvider,
       languageCode: string,
@@ -151,97 +151,6 @@ export function synthesizeRequestBody(settings: ReadAloudSettings, text: string)
         : {}),
     },
   };
-}
-
-/**
- * Joins the WAV files Google returns per chunk into one: the first file's
- * format, every file's samples, and sizes rewritten to match.
- */
-export function joinWavChunks(files: readonly Buffer[]): Buffer {
-  let format: Buffer | null = null;
-  const samples: Buffer[] = [];
-  for (const file of files) {
-    // RIFF header (12 bytes), then chunks of: 4-byte id, 4-byte little-endian size, body.
-    let offset = 12;
-    while (offset + 8 <= file.length) {
-      const id = file.toString("ascii", offset, offset + 4);
-      const size = file.readUInt32LE(offset + 4);
-      const body = file.subarray(offset + 8, Math.min(offset + 8 + size, file.length));
-      if (id === "fmt ") format ??= body;
-      if (id === "data") samples.push(body);
-      offset += 8 + size + (size % 2);
-    }
-  }
-  if (format === null) return Buffer.alloc(0);
-  const data = Buffer.concat(samples);
-  const header = Buffer.alloc(20);
-  header.write("RIFF", 0, "ascii");
-  header.writeUInt32LE(4 + 8 + format.length + 8 + data.length, 4);
-  header.write("WAVE", 8, "ascii");
-  header.write("fmt ", 12, "ascii");
-  header.writeUInt32LE(format.length, 16);
-  const dataHeader = Buffer.alloc(8);
-  dataHeader.write("data", 0, "ascii");
-  dataHeader.writeUInt32LE(data.length, 4);
-  return Buffer.concat([header, format, dataHeader, data]);
-}
-
-// Layer III bitrates (kbps) by bitrate index, for MPEG-1 and for MPEG-2/2.5.
-const MP3_BITRATES = {
-  mpeg1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320],
-  mpeg2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160],
-};
-// Sample rates by version bits: 3 is MPEG-1, 2 is MPEG-2, 0 is MPEG-2.5.
-const MP3_SAMPLE_RATES: Record<number, readonly number[]> = {
-  3: [44100, 48000, 32000],
-  2: [22050, 24000, 16000],
-  0: [11025, 12000, 8000],
-};
-
-/** Seconds of audio in an MP3, by walking its frame headers. */
-export function mp3Duration(file: Buffer): number {
-  let offset = 0;
-  if (file.toString("ascii", 0, 3) === "ID3" && file.length >= 10) {
-    // The ID3v2 size is four 7-bit bytes after the 6-byte header.
-    offset = 10 + ((file[6]! << 21) | (file[7]! << 14) | (file[8]! << 7) | file[9]!);
-  }
-  let seconds = 0;
-  while (offset + 4 <= file.length) {
-    const header = file.readUInt32BE(offset);
-    const version = (header >>> 19) & 3;
-    const sampleRate = MP3_SAMPLE_RATES[version]?.[(header >>> 10) & 3];
-    const bitrate = (version === 3 ? MP3_BITRATES.mpeg1 : MP3_BITRATES.mpeg2)[(header >>> 12) & 15];
-    const isLayer3Frame = header >>> 21 === 0x7ff && ((header >>> 17) & 3) === 1;
-    if (!isLayer3Frame || !sampleRate || !bitrate) {
-      offset += 1;
-      continue;
-    }
-    const samples = version === 3 ? 1152 : 576;
-    seconds += samples / sampleRate;
-    offset += Math.floor((samples / 8) * ((bitrate * 1000) / sampleRate)) + ((header >>> 9) & 1);
-  }
-  return seconds;
-}
-
-/** Drops a leading ID3v2 tag, so joined MP3s carry no tags mid-stream. */
-export function stripId3(file: Buffer): Buffer {
-  if (file.length < 10 || file.toString("ascii", 0, 3) !== "ID3") return file;
-  return file.subarray(10 + ((file[6]! << 21) | (file[7]! << 14) | (file[8]! << 7) | file[9]!));
-}
-
-/** Seconds of audio in a PCM WAV. */
-export function wavDuration(file: Buffer): number {
-  let byteRate = 0;
-  let dataBytes = 0;
-  let offset = 12;
-  while (offset + 8 <= file.length) {
-    const id = file.toString("ascii", offset, offset + 4);
-    const size = file.readUInt32LE(offset + 4);
-    if (id === "fmt ") byteRate = file.readUInt32LE(offset + 16);
-    if (id === "data") dataBytes += Math.min(size, file.length - offset - 8);
-    offset += 8 + size + (size % 2);
-  }
-  return byteRate > 0 ? dataBytes / byteRate : 0;
 }
 
 const SynthesizeResponse = Schema.Struct({ audioContent: Schema.String });
@@ -416,40 +325,44 @@ export const make = Effect.gen(function* () {
     return Buffer.from(decoded.audioContent, "base64");
   });
 
-  const synthesize = Effect.fn("ReadAloud.synthesize")(function* (text: string) {
-    const settings = yield* readSettings();
-    const { provider } = settings;
-    const sentences = speechSentences(
-      speechTextFromMarkdown(text),
-      SERVICE_MAX_SENTENCE_BYTES[provider],
-    );
-    if (sentences.length === 0) {
-      return yield* new ReadAloudError({ detail: "This message has nothing to read aloud." });
-    }
-    // One sentence per request: parallel requests finish sooner than one long one, and
-    // each piece's length says when its sentence starts, for highlighting.
-    const audio = yield* Effect.forEach(
-      sentences.map((_, index) => index),
-      (index) => synthesizeSentence(settings, sentences, index),
-      { concurrency: SERVICE_CONCURRENCY[provider] },
-    );
-    // ElevenLabs always sends MP3; the others send WAV at high quality.
-    const wav = provider !== "elevenlabs" && settings.audioQuality === "high";
-    const pieces = wav ? audio : audio.map(stripId3);
-    const duration = wav ? wavDuration : mp3Duration;
-    let start = 0;
-    const segments = sentences.map((sentence, index) => {
-      const segment = { text: sentence, start };
-      start += duration(pieces[index]!);
-      return segment;
-    });
-    return {
-      // MP3 frames are self-delimiting, so per-sentence MP3s join into one playable stream.
-      audioContent: (wav ? joinWavChunks(pieces) : Buffer.concat(pieces)).toString("base64"),
-      mimeType: wav ? ("audio/wav" as const) : ("audio/mpeg" as const),
-      segments,
-    };
-  });
+  /**
+   * One request per sentence, streamed back in reading order as each finishes:
+   * playback starts after the first sentence, not the whole message, and the
+   * client knows each sentence's text for highlighting.
+   */
+  const synthesize = (text: string) =>
+    Stream.unwrap(
+      Effect.gen(function* () {
+        const settings = yield* readSettings();
+        const { provider } = settings;
+        const sentences = speechSentences(
+          speechTextFromMarkdown(text),
+          SERVICE_MAX_SENTENCE_BYTES[provider],
+        );
+        if (sentences.length === 0) {
+          return yield* new ReadAloudError({ detail: "This message has nothing to read aloud." });
+        }
+        // ElevenLabs always sends MP3; the others send WAV at high quality.
+        const mimeType =
+          provider !== "elevenlabs" && settings.audioQuality === "high"
+            ? ("audio/wav" as const)
+            : ("audio/mpeg" as const);
+        return Stream.fromIterable(sentences.map((_, index) => index)).pipe(
+          Stream.mapEffect(
+            (index) =>
+              synthesizeSentence(settings, sentences, index).pipe(
+                Effect.map((audio) => ({
+                  index,
+                  text: sentences[index]!,
+                  audioContent: audio.toString("base64"),
+                  mimeType,
+                })),
+              ),
+            { concurrency: SERVICE_CONCURRENCY[provider] },
+          ),
+        );
+      }),
+    ).pipe(Stream.withSpan("ReadAloud.synthesize"));
 
   const listVoices = Effect.fn("ReadAloud.listVoices")(function* (
     provider: ReadAloudProvider,

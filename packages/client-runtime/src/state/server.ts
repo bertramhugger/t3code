@@ -1,5 +1,6 @@
 import {
   type EnvironmentId,
+  type ReadAloudSentenceAudio,
   type ServerConfig,
   type ServerConfigStreamEvent,
   type ServerLifecycleWelcomePayload,
@@ -25,6 +26,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 
 import {
   createAtomCommandScheduler,
+  createEnvironmentCommand,
   createEnvironmentRpcCommand,
   createEnvironmentQueryAtomFamily,
   createEnvironmentRpcQueryAtomFamily,
@@ -1000,9 +1002,26 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverRunStorageCleanup,
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
-    synthesizeSpeech: createEnvironmentRpcCommand(runtime, {
+    /**
+     * Streams a message's sentences to `onSentence` as the server finishes each.
+     * Aborting `signal` ends the stream, which stops the server's remaining requests.
+     */
+    synthesizeSpeech: createEnvironmentCommand(runtime, {
       label: "environment-data:server:synthesize-speech",
-      tag: WS_METHODS.serverSynthesizeSpeech,
+      execute: (input: {
+        readonly text: string;
+        readonly signal: AbortSignal;
+        readonly onSentence: (sentence: ReadAloudSentenceAudio) => void;
+      }) =>
+        runStream(WS_METHODS.serverSynthesizeSpeech, { text: input.text }).pipe(
+          Stream.interruptWhen(
+            Effect.callback<void>((resume) => {
+              if (input.signal.aborted) return resume(Effect.void);
+              input.signal.addEventListener("abort", () => resume(Effect.void), { once: true });
+            }),
+          ),
+          Stream.runForEach((sentence) => Effect.sync(() => input.onSentence(sentence))),
+        ),
     }),
     speechVoices: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:speech-voices",

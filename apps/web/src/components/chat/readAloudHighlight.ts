@@ -1,5 +1,3 @@
-import type { ReadAloudSegment } from "@t3tools/contracts";
-
 const HIGHLIGHT_NAME = "t3-read-aloud";
 // Code is not read aloud, and toolbars are not part of the message.
 const SKIPPED = "pre, svg, [data-thread-find-ignore], [role='toolbar']";
@@ -99,25 +97,16 @@ export function speechKeyIndexAtPoint(messageKey: string, x: number, y: number):
   return index === -1 ? null : index;
 }
 
-/** Which segment a click landed in, given where it fell in the message's text. */
+/** Which sentence a click landed in, given where it fell in the message's text. */
 export function segmentAtSpeechKey(
   messageKey: string,
-  segments: readonly ReadAloudSegment[],
+  sentences: readonly string[],
   keyIndex: number,
 ): number | null {
   const root = messageTextRoot(messageKey);
   if (!root) return null;
-  const { key } = indexMessageText(root);
-  return segmentAtKeyIndex(
-    locateSegments(
-      key,
-      segments.map((segment) => segment.text),
-    ),
-    keyIndex,
-  );
+  return segmentAtKeyIndex(locateSegments(indexMessageText(root).key, sentences), keyIndex);
 }
-
-let highlighted: Range | null = null;
 
 /**
  * Paints the sentence being read in its rendered message, without touching the
@@ -126,16 +115,13 @@ let highlighted: Range | null = null;
  */
 export function highlightSpokenSegment(
   messageKey: string,
-  segments: readonly ReadAloudSegment[],
+  sentences: readonly string[],
   index: number,
 ): void {
   if (typeof CSS === "undefined" || !CSS.highlights) return;
   const root = messageTextRoot(messageKey);
   const { key, positions } = root ? indexMessageText(root) : { key: "", positions: [] };
-  const match = locateSegments(
-    key,
-    segments.slice(0, index + 1).map((segment) => segment.text),
-  )[index];
+  const match = locateSegments(key, sentences.slice(0, index + 1))[index];
   const first = match ? positions[match.start] : undefined;
   const last = match ? positions[match.end - 1] : undefined;
   if (!first || !last) {
@@ -149,16 +135,9 @@ export function highlightSpokenSegment(
     last.node,
     last.offset + (last.node.data.codePointAt(last.offset)! > 0xffff ? 2 : 1),
   );
-  highlighted = range;
   CSS.highlights.set(HIGHLIGHT_NAME, new Highlight(range));
 }
 
-/** Whether the painted sentence is still on screen; virtualized rows unmount when scrolled away. */
-export function spokenHighlightIsAttached(): boolean {
-  return highlighted !== null && highlighted.startContainer.isConnected;
-}
-
 export function clearSpokenHighlight(): void {
-  highlighted = null;
   if (typeof CSS !== "undefined" && CSS.highlights) CSS.highlights.delete(HIGHLIGHT_NAME);
 }

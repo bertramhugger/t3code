@@ -3,7 +3,8 @@
 Agent messages can be read aloud by Google Cloud Text-to-Speech, OpenAI, or ElevenLabs. The
 read-aloud button sits next to the copy button on each finished agent message. Click it to listen,
 and click it again to stop. Starting another message stops the one playing. While a message is
-read, the sentence being spoken is highlighted in the message.
+read, the sentence being spoken is highlighted in the message. Reading starts as soon as the first
+sentence is ready; the rest arrive while it plays.
 
 To start partway through, **Option-click** (**Alt-click** on Windows and Linux) a sentence in a
 finished agent message: it is read from that sentence on. While a message is being read, click
